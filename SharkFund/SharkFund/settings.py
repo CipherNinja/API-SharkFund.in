@@ -58,6 +58,19 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+# SMTP configuration for erp@agratasinfotech.com
+EMAIL_HOST = 'mail.agratasinfotech.com'  # The SMTP server from your screenshot
+EMAIL_PORT = 465  # Use port 465 for SSL
+EMAIL_USE_SSL = True  # SSL for secure connection
+EMAIL_HOST_USER = 'erp@agratasinfotech.com'  # Your new email
+EMAIL_HOST_PASSWORD = ')0,ame!qM}I2'  # Replace with the actual password
+DEFAULT_FROM_EMAIL = 'erp@agratasinfotech.com'  # The default 'From' email
+
+# Set EMAIL_USE_TLS = False since you're using SSL (port 465)
+EMAIL_USE_TLS = False
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -90,7 +103,7 @@ ROOT_URLCONF = 'SharkFund.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [r'C:\Users\Priyesh Pandey\OneDrive\Desktop\API-SharkFund.in\SharkFund\cloudManager\templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SharFund Password Reset OTP</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #6F4E37; /* Coffee color */
+            color: #FFFFFF; /* White base */
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: rgba(255, 255, 255, 0.1); /* Slight transparency */
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .logo img {
+            max-width: 150px;
+        }
+        .gradient-text {
+            background: linear-gradient(45deg, #FFD700, #FFFFFF); /* Gold to white */
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .otp {
+            font-size: 32px;
+            text-align: center;
+            margin: 20px 0;
+            letter-spacing: 5px;
+        }
+        .info {
+            font-size: 16px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .footer {
+            font-size: 14px;
+            text-align: center;
+            color: #CCCCCC;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <!-- Replace with your logo URL or local path -->
+            <img src="https://via.placeholder.com/150x50?text=SharFund+Logo" alt="SharkFund Logo">
+        </div>
+        <h1 class="gradient-text">Password Reset OTP</h1>
+        <p class="info">Dear {{ username }},</p>
+        <p class="info">We received a request to reset the password for your SharkFund account associated with {{ email }}.</p>
+        <div class="otp gradient-text">{{ otp }}</div>
+        <p class="info">This OTP is valid for 10 minutes. Please enter it in the provided field to proceed with resetting your password.</p>
+        <p class="footer">If you didn’t request this, please ignore this email or contact support.</p>
+        <p class="footer">Best regards,<br>SharkFund Team</p>
+    </div>
+</body>
+</html>

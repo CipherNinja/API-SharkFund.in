@@ -1,9 +1,13 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CustomUserSerializer, LoginSerializer
+from .serializers import CustomUserSerializer, LoginSerializer, ForgetPasswordSerializer, VerifyOTPSerializer, ResetPasswordSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView as BaseTokenRefreshView
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from .models import OTP
 
 class CustomTokenRefreshView(BaseTokenRefreshView):
     def post(self, request, *args, **kwargs):
@@ -106,3 +110,84 @@ class LoginView(APIView):
         
 # Invoke-WebRequest -Uri "http://127.0.0.1:7877/api/v1/login/" -Method POST -Headers @{"Content-Type"="application/json";"Origin"="http://localhost:3000"} -Body '{"login":"user3@example.com","password":"securepassword123"}'
 # Invoke-WebRequest -Uri "http://127.0.0.1:7877/api/v1/login/" -Method POST -Headers @{"Content-Type"="application/json";"Origin"="http://localhost:3000"} -Body '{"login":"ugr_2025_3","password":"securepassword123"}'
+
+
+class ForgetPasswordView(APIView):
+    def post(self, request):
+        serializer = ForgetPasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                user, otp = serializer.save()
+                html_message = render_to_string('emails/otp_email.html', {
+                    'username': user.username,
+                    'email': user.email,
+                    'otp': otp
+                })
+                plain_message = strip_tags(html_message)
+                send_mail(
+                    subject='SharFund Password Reset OTP',
+                    message=plain_message,
+                    from_email='erp@agratasinfotech.com',
+                    recipient_list=[user.email],
+                    html_message=html_message,
+                    fail_silently=False,
+                )
+                return Response({
+                    'message': 'OTP sent to your email.'
+                }, status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response({
+                    'errors': [f"Failed to send OTP: {str(e)}"]
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            errors = {}
+            for field, error_list in serializer.errors.items():
+                errors[field] = error_list
+            return Response({
+                'errors': errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+class VerifyOTPView(APIView): 
+    def post(self, request):
+        serializer = VerifyOTPSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                return Response({
+                    'message': 'OTP is Correct'
+                }, status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response({
+                    'errors': [f"OTP verification failed: {str(e)}"]
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            errors = {}
+            for field, error_list in serializer.errors.items():
+                errors[field] = error_list
+            return Response({
+                'errors': errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+class ResetPasswordView(APIView):
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                user = serializer.validated_data['user']
+                otp_record = serializer.validated_data['otp_record']
+                user.set_password(serializer.validated_data['create_password'])
+                user.save()
+                otp_record.delete()  # Clear OTP
+                return Response({
+                    'message': 'Password changed successfully'
+                }, status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response({
+                    'errors': [f"Password reset failed: {str(e)}"]
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            errors = {}
+            for field, error_list in serializer.errors.items():
+                errors[field] = error_list
+            return Response({
+                'errors': errors
+            }, status=status.HTTP_400_BAD_REQUEST)

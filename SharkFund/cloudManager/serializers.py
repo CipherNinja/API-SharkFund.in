@@ -1,5 +1,8 @@
 from rest_framework import serializers
-from .models import CustomUser
+from .models import CustomUser, OTP
+from datetime import timedelta
+import random
+import string
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
@@ -112,4 +115,103 @@ class LoginSerializer(serializers.Serializer):
             })
 
         data['user'] = user
+        return data
+    
+
+
+class ForgetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+    def validate_email(self, value):
+        value = value.lower()
+        if not CustomUser.objects.filter(email=value).exists():
+            raise serializers.ValidationError(["Email ID doesn't exist."])
+        return value
+
+    def save(self):
+        email = self.validated_data['email']
+        user = CustomUser.objects.get(email=email)
+
+        # Generate 6-digit OTP
+        otp = ''.join(random.choices(string.digits, k=6))
+
+        # Store OTP
+        OTP.objects.filter(user=user).delete()  # Clear old OTPs
+        OTP.objects.create(
+            user=user,
+            otp=otp,
+            expires_at=timezone.now() + timedelta(minutes=10)
+        )
+
+        return user, otp
+
+class VerifyOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    otp = serializers.CharField(max_length=6, required=True)
+
+    def validate(self, data):
+        email = data.get('email').lower()
+        otp = data.get('otp')
+
+        try:
+            user = CustomUser.objects.get(email=email)
+            otp_record = OTP.objects.filter(user=user, otp=otp).first()
+            if not otp_record:
+                raise serializers.ValidationError({
+                    "otp": ["Invalid OTP."]
+                })
+            if not otp_record.is_valid():
+                otp_record.delete()
+                raise serializers.ValidationError({
+                    "otp": ["OTP has expired."]
+                })
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError({
+                "email": ["Email ID doesn't exist."]
+            })
+
+        return data
+
+class ResetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    create_password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+    confirm_password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+
+    def validate(self, data):
+        email = data.get('email').lower()
+        create_password = data.get('create_password')
+        confirm_password = data.get('confirm_password')
+
+        # Validate email existence
+        try:
+            user = CustomUser.objects.get(email=email)
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError({
+                "email": ["Email ID doesn't exist."]
+            })
+
+        # Check for valid OTP
+        otp_record = OTP.objects.filter(user=user).first()
+        if not otp_record:
+            raise serializers.ValidationError({
+                "general": ["No valid OTP found. Please request a new OTP."]
+            })
+        if not otp_record.is_valid():
+            otp_record.delete()
+            raise serializers.ValidationError({
+                "general": ["OTP has expired. Please request a new OTP."]
+            })
+
+        # Validate passwords
+        if create_password != confirm_password:
+            raise serializers.ValidationError({
+                "confirm_password": ["Passwords do not match."]
+            })
+        if len(create_password) < 8:
+            raise serializers.ValidationError({
+                "create_password": ["Password must be at least 8 characters long."]
+            })
+
+        data['user'] = user
+        data['otp_record'] = otp_record  # Pass OTP record to view
         return data
