@@ -172,3 +172,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# Django Files 
+
+*/migrations/*
+!*/migrations/__init__.py

@@ -2,6 +2,8 @@ from rest_framework import serializers
 from .models import CustomUser
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.contrib.auth import authenticate
+
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     username_field = 'email'
@@ -93,3 +95,21 @@ class CustomUserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "non_field_errors": [f"Failed to create user: {str(e)}"]
             })
+    
+
+class LoginSerializer(serializers.Serializer):
+    login = serializers.CharField(required=True)
+    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+
+    def validate(self, data):
+        login = data.get('login').lower()
+        password = data.get('password')
+
+        user = authenticate(request=self.context.get('request'), username=login, password=password)
+        if not user:
+            raise serializers.ValidationError({
+                "non_field_errors": ["Invalid email/username or password."]
+            })
+
+        data['user'] = user
+        return data
