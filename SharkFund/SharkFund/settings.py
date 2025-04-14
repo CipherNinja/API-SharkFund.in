@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-9^8neq2l2(w@7j==7pdx+jd@o6c4d#z6m%e8d9peq86fpq$vpg
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*','sharkfund.priyeshpandey.in']
 
 AUTH_USER_MODEL = 'cloudManager.CustomUser'
 
