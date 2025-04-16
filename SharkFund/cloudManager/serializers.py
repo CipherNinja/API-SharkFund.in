@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, OTP
+from .models import CustomUser, OTP, Transaction
 from datetime import timedelta
 import random
 import string
@@ -215,3 +215,52 @@ class ResetPasswordSerializer(serializers.Serializer):
         data['user'] = user
         data['otp_record'] = otp_record  # Pass OTP record to view
         return data
+    
+
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    total_income = serializers.SerializerMethodField()
+    wallet_balance = serializers.SerializerMethodField()
+    total_withdrawal = serializers.SerializerMethodField()
+    join_date = serializers.DateTimeField()
+
+    activation_date = serializers.SerializerMethodField()
+    active_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CustomUser
+        fields = [
+            'username', 'total_income', 'wallet_balance', 'total_withdrawal',
+            'join_date', 'activation_date', 'active_status'
+        ]
+
+    def get_total_income(self, obj):
+        if hasattr(obj, 'wallet'):
+            return obj.wallet.total_income
+        return 0.00
+
+    def get_wallet_balance(self, obj):
+        if hasattr(obj, 'wallet'):
+            return obj.wallet.wallet_balance
+        return 0.00
+
+    def get_total_withdrawal(self, obj):
+        if hasattr(obj, 'wallet'):
+            return obj.wallet.total_withdrawal
+        return 0.00
+
+    def get_activation_date(self, obj):
+        if hasattr(obj, 'wallet'):
+            first_transaction = Transaction.objects.filter(wallet=obj.wallet).order_by('timestamp').first()
+            if first_transaction:
+                return first_transaction.timestamp
+            else:
+                return "Inactive due to Insufficient Balance in wallet"
+        return "Wallet not created"
+
+    def get_active_status(self, obj):
+        if hasattr(obj, 'wallet'):
+            return Transaction.objects.filter(wallet=obj.wallet, amount__gte=1000).exists()
+        return False
+

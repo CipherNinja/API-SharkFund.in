@@ -1,14 +1,16 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CustomUserSerializer, LoginSerializer, ForgetPasswordSerializer, VerifyOTPSerializer, ResetPasswordSerializer
+from .serializers import CustomUserSerializer, LoginSerializer, ForgetPasswordSerializer, VerifyOTPSerializer, ResetPasswordSerializer, UserProfileSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView as BaseTokenRefreshView
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from .models import OTP
-
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from .models import CustomUser
 class CustomTokenRefreshView(BaseTokenRefreshView):
     def post(self, request, *args, **kwargs):
         try:
@@ -45,13 +47,15 @@ class RegisterView(APIView):
                     'access_token',
                     str(refresh.access_token),
                     httponly=True,
-                    max_age=3600  # 1 hour
+                    max_age=3600 , # 1 hour
+                    samesite='None'
                 )
                 response.set_cookie(
                     'refresh_token',
                     str(refresh),
                     httponly=True,
-                    max_age=86400  # 1 day
+                    max_age=86400,  # 1 day
+                    samesite='None'
                 )
                 return response
             except Exception as e:
@@ -90,8 +94,8 @@ class LoginView(APIView):
                         'mobile_number': user.mobile_number
                     }
                 }, status=status.HTTP_200_OK)
-                response.set_cookie('access_token', str(refresh.access_token), httponly=True, max_age=3600)
-                response.set_cookie('refresh_token', str(refresh), httponly=True, max_age=86400)
+                response.set_cookie('access_token', str(refresh.access_token), httponly=True, max_age=3600, samesite='None')
+                response.set_cookie('refresh_token', str(refresh), httponly=True, max_age=86400, samesite='None')
                 return response
             except Exception as e:
                 return Response({
@@ -191,3 +195,13 @@ class ResetPasswordView(APIView):
             return Response({
                 'errors': errors
             }, status=status.HTTP_400_BAD_REQUEST)
+        
+
+
+class UserProfileView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        serializer = UserProfileSerializer(request.user)
+        return Response(serializer.data)
