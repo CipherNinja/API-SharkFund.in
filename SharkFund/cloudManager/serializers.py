@@ -25,7 +25,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['email', 'password', 'confirm_password', 'address', 'mobile_number']
+        fields = ['name','email', 'password', 'confirm_password', 'address', 'mobile_number']
         extra_kwargs = {
             'email': {'required': True},
             'address': {'required': False},
@@ -86,6 +86,7 @@ class CustomUserSerializer(serializers.ModelSerializer):
         try:
             # Create the user
             user = CustomUser.objects.create_user(
+                name=validated_data['name'],
                 username=username,
                 email=validated_data['email'].lower(),  # Store email in lowercase
                 password=validated_data['password'],

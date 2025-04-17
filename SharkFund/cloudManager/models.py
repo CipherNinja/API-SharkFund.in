@@ -6,6 +6,7 @@ from django.db.models.signals import pre_save, pre_delete
 from django.dispatch import receiver
 
 class CustomUser(AbstractUser):
+    name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)  # Ensures email is unique
     address = models.TextField(null=True, blank=True)
     mobile_number = models.CharField(max_length=15, null=True, blank=True)
