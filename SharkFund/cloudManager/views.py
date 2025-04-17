@@ -1,13 +1,13 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CustomUserSerializer, LoginSerializer, ForgetPasswordSerializer, VerifyOTPSerializer, ResetPasswordSerializer, UserProfileSerializer
+from .serializers import CustomUserSerializer, LoginSerializer, ForgetPasswordSerializer, VerifyOTPSerializer, ResetPasswordSerializer, UserProfileSerializer, TransactionHistorySerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView as BaseTokenRefreshView
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
-from .models import OTP
+from .models import OTP, Transaction
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import CustomUser
@@ -235,3 +235,21 @@ class TeamReferralStatsView(APIView):
         }
 
         return Response(data, status=status.HTTP_200_OK)
+
+
+
+class TransactionHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Fetch user's transactions ordered by timestamp
+        transactions = Transaction.objects.filter(wallet__user=request.user).order_by('timestamp')
+        
+        # Prepare serial number mapping (id -> serial number)
+        serial_number_map = {txn.id: idx + 1 for idx, txn in enumerate(transactions)}
+
+        # Pass serial number mapping into context
+        serializer = TransactionHistorySerializer(
+            transactions, many=True, context={'serial_number_map': serial_number_map}
+        )
+        return Response(serializer.data)

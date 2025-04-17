@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import RegisterView, CustomTokenRefreshView, LoginView, ForgetPasswordView, VerifyOTPView, ResetPasswordView, UserProfileView, TeamReferralStatsView
+from .views import RegisterView, CustomTokenRefreshView, LoginView, ForgetPasswordView, VerifyOTPView, ResetPasswordView, UserProfileView, TeamReferralStatsView, TransactionHistoryView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
 
@@ -18,6 +18,7 @@ urlpatterns = [
     # Dashboard Data
     path('api/v1/profile/', UserProfileView.as_view(), name='user-profile'),
     path('api/v1/stats/', TeamReferralStatsView.as_view(), name='team-stats'),
+    path('api/v1/transaction/history/', TransactionHistoryView.as_view(), name='transaction-history'),
     
     
 ]

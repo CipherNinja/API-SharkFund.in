@@ -264,3 +264,25 @@ class UserProfileSerializer(serializers.ModelSerializer):
             return Transaction.objects.filter(wallet=obj.wallet, amount__gte=1000).exists()
         return False
 
+
+from rest_framework import serializers
+from .models import Transaction
+
+class TransactionHistorySerializer(serializers.ModelSerializer):
+    serial_number = serializers.SerializerMethodField()
+    method = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Transaction
+        fields = ['serial_number', 'amount', 'timestamp', 'method', 'status']
+
+    def get_serial_number(self, obj):
+        """Serial number based on queryset ordering"""
+        return self.context['serial_number_map'][obj.id]
+
+    def get_method(self, obj):
+        return "PayPal"
+
+    def get_status(self, obj):
+        return "Completed"
