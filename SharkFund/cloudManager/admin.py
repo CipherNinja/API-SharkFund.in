@@ -19,7 +19,7 @@ class WalletInline(admin.TabularInline):
 
 # Custom User Admin with referral properties and Wallet inline
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'email', 'total_referrals', 'active_referrals', 'total_team', 'active_team', 'is_staff')
+    list_display = ('username','name' ,'email', 'total_referrals', 'active_referrals', 'total_team', 'active_team', 'is_staff')
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups')
     search_fields = ('username', 'email', 'mobile_number')
     ordering = ('-date_joined',)
