@@ -205,3 +205,33 @@ class UserProfileView(APIView):
     def get(self, request, *args, **kwargs):
         serializer = UserProfileSerializer(request.user)
         return Response(serializer.data)
+    
+
+
+class TeamReferralStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Fetch all users who have at least 1000 INR in their transaction history
+        active_users = CustomUser.objects.filter(
+            wallet__transactions__amount__gte=1000
+        ).distinct()
+
+        total_teams = CustomUser.objects.all().count()  # Total number of users
+        active_teams = CustomUser.objects.filter(
+            wallet__transactions__amount__gte=1000
+        ).distinct().count()  # Active teams (users with > 1000 INR in deposits)
+
+        total_referrals = CustomUser.objects.filter(referred_by__isnull=False).count()  # Total referrals
+        active_referrals = CustomUser.objects.filter(
+            referred_by__isnull=False, wallet__transactions__amount__gte=1000
+        ).distinct().count()  # Active referrals
+
+        data = {
+            'total_teams': total_teams,
+            'active_teams': active_teams,
+            'total_referrals': total_referrals,
+            'active_referrals': active_referrals
+        }
+
+        return Response(data, status=status.HTTP_200_OK)
