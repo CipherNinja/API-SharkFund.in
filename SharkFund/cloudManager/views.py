@@ -1,16 +1,24 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import CustomUserSerializer, LoginSerializer, ForgetPasswordSerializer, VerifyOTPSerializer, ResetPasswordSerializer, UserProfileSerializer, TransactionHistorySerializer
+from rest_framework import generics, permissions
+from .serializers import (
+    CustomUserSerializer, LoginSerializer,
+    ForgetPasswordSerializer, VerifyOTPSerializer,
+    ResetPasswordSerializer, UserProfileSerializer,
+    TransactionHistorySerializer, WithdrawalHistorySerializer,
+    CustomerProfileSerializer
+)
+
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView as BaseTokenRefreshView
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
-from .models import OTP, Transaction
+from .models import Transaction, CustomUser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from .models import CustomUser
+
 class CustomTokenRefreshView(BaseTokenRefreshView):
     def post(self, request, *args, **kwargs):
         try:
@@ -253,3 +261,41 @@ class TransactionHistoryView(APIView):
             transactions, many=True, context={'serial_number_map': serial_number_map}
         )
         return Response(serializer.data)
+
+
+class WithdrawalHistoryAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        withdrawals = user.wallet.transactions.filter(transaction_type='WITHDRAWAL').order_by('-timestamp')
+
+        data = []
+        for index, transaction in enumerate(withdrawals, start=1):
+            serializer = WithdrawalHistorySerializer(transaction, context={'serial_number': index})
+            data.append(serializer.data)
+
+        return Response(data)
+
+
+
+class CustomerProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        serializer = CustomerProfileSerializer(request.user)
+        return Response(serializer.data)
+
+    def put(self, request):
+        user = request.user
+        serializer = CustomerProfileSerializer(user, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            # Only allow updating name, mobile_number, country — rest are readonly via serializer Meta
+            user.name = serializer.validated_data.get('name', user.name)
+            user.mobile_number = serializer.validated_data.get('mobile_number', user.mobile_number)
+            user.country = serializer.validated_data.get('country', user.country)
+            user.save()
+
+            return Response(CustomerProfileSerializer(user).data)
+        return Response(serializer.errors, status=400)

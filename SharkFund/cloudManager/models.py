@@ -13,7 +13,8 @@ class CustomUser(AbstractUser):
     referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals')  # Tracks who referred this user
     join_date = models.DateTimeField(default=timezone.now)  # When user joined
     last_active = models.DateTimeField(null=True, blank=True)  # Last activity timestamp (optional)
-
+    country = models.CharField(default="India")
+    
     def __str__(self):
         return self.username
 

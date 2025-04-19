@@ -287,3 +287,68 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
 
     def get_status(self, obj):
         return "Completed"
+
+
+class WithdrawalHistorySerializer(serializers.ModelSerializer):
+    serial_number = serializers.SerializerMethodField()
+    method = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Transaction
+        fields = ['serial_number', 'amount', 'timestamp', 'method', 'status']
+
+    def get_serial_number(self, obj):
+        # Serial number based on the queryset order in the view
+        return self.context['serial_number']
+
+    def get_method(self, obj):
+        return 'PayPal'
+
+    def get_status(self, obj):
+        return 'Completed'
+
+
+
+class CustomerProfileSerializer(serializers.ModelSerializer):
+    sponsored_name = serializers.SerializerMethodField()
+    sponsored_email = serializers.SerializerMethodField()
+    activation_date = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CustomUser
+        fields = [
+            'username',
+            'email',
+            'name',
+            'mobile_number',
+            'country',
+            'join_date',
+            'sponsored_name',
+            'sponsored_email',
+            'activation_date'
+        ]
+        read_only_fields = [
+            'username',
+            'email',
+            'join_date',
+            'sponsored_name',
+            'sponsored_email',
+            'activation_date'
+        ]
+
+    def get_sponsored_name(self, obj):
+        if obj.referred_by:
+            return obj.referred_by.name or "NA"
+        return "NA"
+
+    def get_sponsored_email(self, obj):
+        if obj.referred_by:
+            return obj.referred_by.email or "NA"
+        return "NA"
+
+    def get_activation_date(self, obj):
+        first_transaction = Transaction.objects.filter(wallet__user=obj).order_by('timestamp').first()
+        if first_transaction:
+            return first_transaction.timestamp
+        return "NA"
