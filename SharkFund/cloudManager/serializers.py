@@ -22,14 +22,16 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 class CustomUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
     confirm_password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+    referred_by = serializers.CharField(write_only=True, required=False, allow_blank=True)  # New field for referrer username
 
     class Meta:
         model = CustomUser
-        fields = ['name','email', 'password', 'confirm_password', 'address', 'mobile_number']
+        fields = ['name', 'email', 'password', 'confirm_password', 'address', 'mobile_number', 'referred_by']
         extra_kwargs = {
             'email': {'required': True},
             'address': {'required': False},
             'mobile_number': {'required': False},
+            'referred_by': {'required': False},
         }
 
     def validate(self, data):
@@ -62,9 +64,20 @@ class CustomUserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(["Mobile number is too long."])
         return value
 
+    def validate_referred_by(self, value):
+        # Validate referrer username if provided
+        if value:
+            try:
+                referrer = CustomUser.objects.get(username=value)
+                return value
+            except CustomUser.DoesNotExist:
+                raise serializers.ValidationError(["Referrer with this username does not exist."])
+        return value
+
     def create(self, validated_data):
-        # Remove confirm_password as it's not needed for user creation
+        # Remove confirm_password and referred_by as they are not model fields
         validated_data.pop('confirm_password')
+        referred_by_username = validated_data.pop('referred_by', None)
 
         # Generate username: ugr_YEAR_NUMBER
         current_year = timezone.now().year
@@ -88,14 +101,20 @@ class CustomUserSerializer(serializers.ModelSerializer):
             user = CustomUser.objects.create_user(
                 name=validated_data['name'],
                 username=username,
-                email=validated_data['email'].lower(),  # Store email in lowercase
+                email=validated_data['email'].lower(),
                 password=validated_data['password'],
                 address=validated_data.get('address'),
                 mobile_number=validated_data.get('mobile_number')
             )
+
+            # Link referrer if referred_by_username is provided
+            if referred_by_username:
+                referrer = CustomUser.objects.get(username=referred_by_username)
+                user.referred_by = referrer
+                user.save()
+
             return user
         except Exception as e:
-            # Catch any unexpected errors during user creation
             raise serializers.ValidationError({
                 "non_field_errors": [f"Failed to create user: {str(e)}"]
             })
