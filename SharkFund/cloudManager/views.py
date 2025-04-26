@@ -45,9 +45,6 @@ class RegisterView(APIView):
                     'message': 'User registered successfully',
                     'user': {
                         'username': user.username,
-                        'email': user.email,
-                        'address': user.address,
-                        'mobile_number': user.mobile_number
                     }
                 }, status=status.HTTP_201_CREATED)
                 # Set cookies without Secure and SameSite for development

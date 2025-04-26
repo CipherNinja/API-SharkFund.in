@@ -1,9 +1,10 @@
 from django.contrib.auth.models import AbstractUser
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from django.core.validators import MinValueValidator
 from django.db.models.signals import pre_save, pre_delete
 from django.dispatch import receiver
+from django.core.exceptions import ValidationError
 
 class CustomUser(AbstractUser):
     name = models.CharField(max_length=100)
@@ -78,46 +79,60 @@ class Wallet(models.Model):
     def __str__(self):
         return f"Wallet for {self.user.username}"
 
+    def calculate_balance(self):
+        """Calculate the current balance based on transactions."""
+        deposits = self.transactions.filter(transaction_type='DEPOSIT').aggregate(total=models.Sum('amount'))['total'] or 0
+        withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL').aggregate(total=models.Sum('amount'))['total'] or 0
+        add_income = self.transactions.filter(transaction_type='ADD_INCOME').aggregate(total=models.Sum('amount'))['total'] or 0
+        return deposits + add_income - withdrawals
+
     def update_from_transactions(self):
         """Recalculate wallet state based on transaction history."""
         deposits = self.transactions.filter(transaction_type='DEPOSIT').aggregate(total=models.Sum('amount'))['total'] or 0
         withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL').aggregate(total=models.Sum('amount'))['total'] or 0
         add_income = self.transactions.filter(transaction_type='ADD_INCOME').aggregate(total=models.Sum('amount'))['total'] or 0
-        # Set total_withdrawal to the sum of all WITHDRAWAL transactions
         self.total_withdrawal = withdrawals
-        # wallet_balance is net of deposits, add_income (credits), and withdrawals (debits)
         self.wallet_balance = deposits + add_income - withdrawals
         self.save()
 
+    @transaction.atomic
     def add_funds(self, amount):
         """Add funds and create a transaction record."""
         if amount <= 0:
-            return False
+            return False, "Amount must be positive."
         Transaction.objects.create(wallet=self, amount=amount, transaction_type='DEPOSIT')
         self.update_from_transactions()
-        return True
+        return True, "Deposit successful."
 
+    @transaction.atomic
     def withdraw_funds(self, amount):
         """Withdraw funds and create a transaction record if sufficient balance."""
-        if amount <= 0 or self.wallet_balance < amount:
-            return False
+        if amount <= 0:
+            return False, "Amount must be positive."
+
+        self.refresh_from_db()
+        current_balance = self.calculate_balance()
+        if current_balance < amount:
+            return False, f"Insufficient funds: Current balance is {current_balance}, but withdrawal amount is {amount}."
+
         Transaction.objects.create(wallet=self, amount=amount, transaction_type='WITHDRAWAL')
         self.update_from_transactions()
-        return True
+        return True, "Withdrawal successful."
 
+    @transaction.atomic
     def add_income(self, amount):
         """Add income and create a transaction record."""
         if amount <= 0:
-            return False
+            return False, "Amount must be positive."
         Transaction.objects.create(wallet=self, amount=amount, transaction_type='ADD_INCOME')
-        self.total_income += amount  # Increment total_income for ADD_INCOME
+        self.total_income += amount
         self.update_from_transactions()
-        return True
+        return True, "Income added successfully."
 
 
 class Transaction(models.Model):
     wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='transactions')
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
     transaction_type = models.CharField(max_length=10, choices=[('DEPOSIT', 'Deposit'), ('WITHDRAWAL', 'Withdrawal'), ('ADD_INCOME', 'Add Income')])
     timestamp = models.DateTimeField(default=timezone.now)
     description = models.TextField(blank=True, null=True)
@@ -125,19 +140,36 @@ class Transaction(models.Model):
     def __str__(self):
         return f"{self.transaction_type} of ${self.amount} for {self.wallet.user.username}"
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
-        """Override save to update wallet state after transaction change."""
+        """Override save to validate and update wallet state."""
         is_new = not self.pk  # Check if this is a new transaction
+
+        # Validate withdrawal against current balance
+        if is_new and self.transaction_type == 'WITHDRAWAL':
+            # Lock the wallet row to prevent race conditions
+            wallet = Wallet.objects.select_for_update().get(id=self.wallet.id)
+            current_balance = wallet.calculate_balance()
+            if current_balance < self.amount:
+                raise ValidationError(
+                    f"Insufficient funds: Current balance is {current_balance}, but withdrawal amount is {self.amount}."
+                )
+
+        # Proceed with saving the transaction
         super().save(*args, **kwargs)
+
+        # Update total_income for ADD_INCOME transactions
         if is_new and self.transaction_type == 'ADD_INCOME':
-            self.wallet.total_income += self.amount  # Increment total_income for new ADD_INCOME
+            self.wallet.total_income += self.amount
             self.wallet.save()
+
+        # Recalculate wallet state
         self.wallet.update_from_transactions()
 
     def delete(self, *args, **kwargs):
         """Prevent deletion and log to console."""
         print(f"Attempted deletion of transaction {self.id} for wallet {self.wallet.user.username} at {timezone.now()}")
-        return None  # Pass without raising an error
+        return None
 
 
 # Signal to update wallet on transaction changes
@@ -148,9 +180,9 @@ def update_wallet_on_transaction_save(sender, instance, **kwargs):
         if old_transaction.amount != instance.amount or old_transaction.transaction_type != instance.transaction_type:
             instance.wallet.update_from_transactions()
             if old_transaction.transaction_type == 'ADD_INCOME' and instance.transaction_type != 'ADD_INCOME':
-                instance.wallet.total_income -= old_transaction.amount  # Remove old income if type changes
+                instance.wallet.total_income -= old_transaction.amount
             elif instance.transaction_type == 'ADD_INCOME' and old_transaction.transaction_type != 'ADD_INCOME':
-                instance.wallet.total_income += instance.amount  # Add new income if type changes to ADD_INCOME
+                instance.wallet.total_income += instance.amount
             instance.wallet.save()
 
 
