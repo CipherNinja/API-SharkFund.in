@@ -217,24 +217,23 @@ class TeamReferralStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Fetch all users who have at least 1000 INR in their transaction history
-        active_users = CustomUser.objects.filter(
-            wallet__transactions__amount__gte=1000
-        ).distinct()
+        user = request.user  # Get the authenticated user
 
-        total_teams = CustomUser.objects.all().count()  # Total number of users
-        active_teams = CustomUser.objects.filter(
-            wallet__transactions__amount__gte=1000
-        ).distinct().count()  # Active teams (users with > 1000 INR in deposits)
+        # Calculate total team (direct + indirect referrals)
+        total_team = user.total_team
 
-        total_referrals = CustomUser.objects.filter(referred_by__isnull=False).count()  # Total referrals
-        active_referrals = CustomUser.objects.filter(
-            referred_by__isnull=False, wallet__transactions__amount__gte=1000
-        ).distinct().count()  # Active referrals
+        # Calculate active team (users with at least 1000 INR in transactions)
+        active_team = user.active_team
+
+        # Calculate total referrals (direct referrals only)
+        total_referrals = user.total_referrals
+
+        # Calculate active referrals (direct referrals with at least 1000 INR in transactions)
+        active_referrals = user.active_referrals
 
         data = {
-            'total_teams': total_teams,
-            'active_teams': active_teams,
+            'total_team': total_team,
+            'active_team': active_team,
             'total_referrals': total_referrals,
             'active_referrals': active_referrals
         }
