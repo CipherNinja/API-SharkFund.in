@@ -7,7 +7,7 @@ from .serializers import (
     ForgetPasswordSerializer, VerifyOTPSerializer,
     ResetPasswordSerializer, UserProfileSerializer,
     TransactionHistorySerializer, WithdrawalHistorySerializer,
-    CustomerProfileSerializer
+    CustomerProfileSerializer, ReferralSerializer
 )
 
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -295,3 +295,19 @@ class CustomerProfileView(APIView):
 
             return Response(CustomerProfileSerializer(user).data)
         return Response(serializer.errors, status=400)
+
+
+class MyReferralsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Get the logged-in user
+        user = request.user
+
+        # Fetch all users referred by the current user
+        referrals = CustomUser.objects.filter(referred_by=user).select_related('wallet')
+
+        # Serialize the data
+        serializer = ReferralSerializer(referrals, many=True)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)

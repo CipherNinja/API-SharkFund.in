@@ -371,3 +371,15 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
         if first_transaction:
             return first_transaction.timestamp
         return "NA"
+
+
+class ReferralSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CustomUser
+        fields = ['username', 'name', 'mobile_number', 'join_date', 'status']
+
+    def get_status(self, obj):
+        # Determine if the user is active based on wallet_balance
+        return "Active" if obj.wallet.wallet_balance >= 1000 else "Inactive"

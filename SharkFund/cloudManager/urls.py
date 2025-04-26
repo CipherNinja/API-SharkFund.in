@@ -5,7 +5,7 @@ from .views import (
     VerifyOTPView, ResetPasswordView, 
     UserProfileView, TeamReferralStatsView,
     TransactionHistoryView, WithdrawalHistoryAPIView,
-    CustomerProfileView,
+    CustomerProfileView, MyReferralsView
 )
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
@@ -30,6 +30,7 @@ urlpatterns = [
     path('api/v1/transaction/history/', TransactionHistoryView.as_view(), name='transaction-history'),
     path('api/v1/withdrawal/history/', WithdrawalHistoryAPIView.as_view(), name='withdrawal-history'),
     path('api/v1/edit/information/', CustomerProfileView.as_view(), name='edit-profile'),
+    path('api/v1/my-referrals/', MyReferralsView.as_view(), name='my-referrals'),
     
     
 ]
