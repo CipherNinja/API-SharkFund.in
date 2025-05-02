@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, OTP, Transaction
+from .models import CustomUser, OTP, Transaction, PaymentDetail
 from datetime import timedelta
 import random
 import string
@@ -285,9 +285,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return False
 
 
-from rest_framework import serializers
-from .models import Transaction
-
 class TransactionHistorySerializer(serializers.ModelSerializer):
     serial_number = serializers.SerializerMethodField()
     method = serializers.SerializerMethodField()
@@ -329,10 +326,25 @@ class WithdrawalHistorySerializer(serializers.ModelSerializer):
 
 
 
+class PaymentDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentDetail
+        fields = [
+            'account_holder_name',
+            'account_number',
+            'ifsc_code',
+            'upi_id',
+            'card_number',
+            'name_on_card',
+            'expiry_date',
+            'cvv',
+        ]
+
 class CustomerProfileSerializer(serializers.ModelSerializer):
     sponsored_name = serializers.SerializerMethodField()
     sponsored_email = serializers.SerializerMethodField()
     activation_date = serializers.SerializerMethodField()
+    payment_detail = PaymentDetailSerializer(required=False)  # Nested serializer for payment details
 
     class Meta:
         model = CustomUser
@@ -345,7 +357,8 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
             'join_date',
             'sponsored_name',
             'sponsored_email',
-            'activation_date'
+            'activation_date',
+            'payment_detail',  # Include payment details in the response
         ]
         read_only_fields = [
             'username',
@@ -353,7 +366,7 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
             'join_date',
             'sponsored_name',
             'sponsored_email',
-            'activation_date'
+            'activation_date',
         ]
 
     def get_sponsored_name(self, obj):
@@ -371,6 +384,33 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
         if first_transaction:
             return first_transaction.timestamp
         return "NA"
+
+    def update(self, instance, validated_data):
+        # Extract payment_detail data if present
+        payment_detail_data = validated_data.pop('payment_detail', None)
+
+        # Update CustomUser fields
+        instance.name = validated_data.get('name', instance.name)
+        instance.mobile_number = validated_data.get('mobile_number', instance.mobile_number)
+        instance.country = validated_data.get('country', instance.country)
+        instance.save()
+
+        # Handle PaymentDetail update or creation
+        if payment_detail_data:
+            try:
+                # If payment details already exist, update them
+                payment_detail = instance.payment_detail
+                payment_detail_serializer = PaymentDetailSerializer(payment_detail, data=payment_detail_data, partial=True)
+            except PaymentDetail.DoesNotExist:
+                # If payment details don't exist, create a new instance
+                payment_detail_serializer = PaymentDetailSerializer(data=payment_detail_data)
+
+            if payment_detail_serializer.is_valid():
+                payment_detail_serializer.save(user=instance)
+            else:
+                raise serializers.ValidationError(payment_detail_serializer.errors)
+
+        return instance
 
 
 class ReferralSerializer(serializers.ModelSerializer):

@@ -1,60 +1,61 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models, transaction
 from django.utils import timezone
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db.models.signals import pre_save, pre_delete
 from django.dispatch import receiver
 from django.core.exceptions import ValidationError
 
 class CustomUser(AbstractUser):
     name = models.CharField(max_length=100)
-    email = models.EmailField(unique=True)  # Ensures email is unique
+    email = models.EmailField(unique=True)
     address = models.TextField(null=True, blank=True)
     mobile_number = models.CharField(max_length=15, null=True, blank=True)
-    referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals')  # Tracks who referred this user
-    join_date = models.DateTimeField(default=timezone.now)  # When user joined
-    last_active = models.DateTimeField(null=True, blank=True)  # Last activity timestamp (optional)
-    country = models.CharField(default="India")
-    
+    referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals')
+    join_date = models.DateTimeField(default=timezone.now)
+    last_active = models.DateTimeField(null=True, blank=True)
+    country = models.CharField(default="India", max_length=100)
+
     def __str__(self):
         return self.username
 
     def update_last_active(self):
-        """Update the last active timestamp (optional, can be removed if unused)."""
         self.last_active = timezone.now()
         self.save()
 
     @property
     def total_team(self):
-        """Calculate total team (direct + indirect referrals)."""
-        return self.referrals.count() + sum(user.total_team for user in self.referrals.all())
+        def count_referrals(user):
+            referrals = user.referrals.all()
+            direct_count = referrals.count()
+            indirect_count = sum(count_referrals(referral) for referral in referrals)
+            return direct_count + indirect_count
+        return count_referrals(self)
 
     @property
     def active_team(self):
-        """Calculate active team (users with total transactions >= INR 1000)."""
         active_users = set()
         def collect_active_referrals(user):
+            if not hasattr(user, 'wallet'):
+                return
+            if user.wallet.wallet_balance >= 1000:
+                active_users.add(user.id)
             for referral in user.referrals.all():
-                if referral.wallet.transactions.filter(amount__gte=1000).exists():
-                    active_users.add(referral)
                 collect_active_referrals(referral)
-        collect_active_referrals(self)
-        if self.wallet.transactions.filter(amount__gte=1000).exists():
-            active_users.add(self)
+        user_with_data = CustomUser.objects.prefetch_related(
+            models.Prefetch('referrals', queryset=CustomUser.objects.prefetch_related('wallet', 'referrals')),
+            'wallet'
+        ).get(id=self.id)
+        collect_active_referrals(user_with_data)
         return len(active_users)
 
     @property
     def total_referrals(self):
-        """Count direct referrals."""
         return self.referrals.count()
 
     @property
     def active_referrals(self):
-        """Count active direct referrals (with total transactions >= INR 1000)."""
-        return self.referrals.filter(
-            wallet__transactions__amount__gte=1000
-        ).distinct().count()
-
+        return self.referrals.filter(wallet__wallet_balance__gte=1000).distinct().count()
 
 class OTP(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
@@ -68,7 +69,6 @@ class OTP(models.Model):
     def __str__(self):
         return f"OTP {self.otp} for {self.user.email}"
 
-
 class Wallet(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='wallet')
     total_income = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
@@ -80,14 +80,12 @@ class Wallet(models.Model):
         return f"Wallet for {self.user.username}"
 
     def calculate_balance(self):
-        """Calculate the current balance based on transactions."""
         deposits = self.transactions.filter(transaction_type='DEPOSIT').aggregate(total=models.Sum('amount'))['total'] or 0
         withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL').aggregate(total=models.Sum('amount'))['total'] or 0
         add_income = self.transactions.filter(transaction_type='ADD_INCOME').aggregate(total=models.Sum('amount'))['total'] or 0
         return deposits + add_income - withdrawals
 
     def update_from_transactions(self):
-        """Recalculate wallet state based on transaction history."""
         deposits = self.transactions.filter(transaction_type='DEPOSIT').aggregate(total=models.Sum('amount'))['total'] or 0
         withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL').aggregate(total=models.Sum('amount'))['total'] or 0
         add_income = self.transactions.filter(transaction_type='ADD_INCOME').aggregate(total=models.Sum('amount'))['total'] or 0
@@ -97,7 +95,6 @@ class Wallet(models.Model):
 
     @transaction.atomic
     def add_funds(self, amount):
-        """Add funds and create a transaction record."""
         if amount <= 0:
             return False, "Amount must be positive."
         Transaction.objects.create(wallet=self, amount=amount, transaction_type='DEPOSIT')
@@ -106,29 +103,24 @@ class Wallet(models.Model):
 
     @transaction.atomic
     def withdraw_funds(self, amount):
-        """Withdraw funds and create a transaction record if sufficient balance."""
         if amount <= 0:
             return False, "Amount must be positive."
-
         self.refresh_from_db()
         current_balance = self.calculate_balance()
         if current_balance < amount:
             return False, f"Insufficient funds: Current balance is {current_balance}, but withdrawal amount is {amount}."
-
         Transaction.objects.create(wallet=self, amount=amount, transaction_type='WITHDRAWAL')
         self.update_from_transactions()
         return True, "Withdrawal successful."
 
     @transaction.atomic
     def add_income(self, amount):
-        """Add income and create a transaction record."""
         if amount <= 0:
             return False, "Amount must be positive."
         Transaction.objects.create(wallet=self, amount=amount, transaction_type='ADD_INCOME')
         self.total_income += amount
         self.update_from_transactions()
         return True, "Income added successfully."
-
 
 class Transaction(models.Model):
     wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='transactions')
@@ -142,40 +134,75 @@ class Transaction(models.Model):
 
     @transaction.atomic
     def save(self, *args, **kwargs):
-        """Override save to validate and update wallet state."""
-        is_new = not self.pk  # Check if this is a new transaction
-
-        # Validate withdrawal against current balance
+        is_new = not self.pk
         if is_new and self.transaction_type == 'WITHDRAWAL':
-            # Lock the wallet row to prevent race conditions
             wallet = Wallet.objects.select_for_update().get(id=self.wallet.id)
             current_balance = wallet.calculate_balance()
             if current_balance < self.amount:
                 raise ValidationError(
                     f"Insufficient funds: Current balance is {current_balance}, but withdrawal amount is {self.amount}."
                 )
-
-        # Proceed with saving the transaction
         super().save(*args, **kwargs)
-
-        # Update total_income for ADD_INCOME transactions
         if is_new and self.transaction_type == 'ADD_INCOME':
             self.wallet.total_income += self.amount
             self.wallet.save()
-
-        # Recalculate wallet state
         self.wallet.update_from_transactions()
 
     def delete(self, *args, **kwargs):
-        """Prevent deletion and log to console."""
         print(f"Attempted deletion of transaction {self.id} for wallet {self.wallet.user.username} at {timezone.now()}")
         return None
 
+class PaymentDetail(models.Model):
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='payment_detail')
+    
+    # Bank Account Details
+    account_holder_name = models.CharField(max_length=100, blank=True, null=True)
+    account_number = models.CharField(max_length=20, blank=True, null=True, validators=[
+        RegexValidator(r'^\d+$', 'Account number must contain only digits.')
+    ])
+    ifsc_code = models.CharField(max_length=11, blank=True, null=True, validators=[
+        RegexValidator(r'^[A-Z]{4}0[A-Z0-9]{6}$', 'Invalid IFSC code format.')
+    ])
 
-# Signal to update wallet on transaction changes
+    # UPI Details
+    upi_id = models.CharField(max_length=100, blank=True, null=True, validators=[
+        RegexValidator(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', 'Invalid UPI ID format.')
+    ])
+
+    # Card Details
+    card_number = models.CharField(max_length=19, blank=True, null=True, validators=[
+        RegexValidator(r'^\d{16}$', 'Card number must be exactly 16 digits.')
+    ])
+    name_on_card = models.CharField(max_length=100, blank=True, null=True)
+    expiry_date = models.CharField(max_length=5, blank=True, null=True, validators=[
+        RegexValidator(r'^(0[1-9]|1[0-2])\/\d{2}$', 'Expiry date must be in MM/YY format.')
+    ])
+    cvv = models.CharField(max_length=4, blank=True, null=True, validators=[
+        RegexValidator(r'^\d{3,4}$', 'CVV must be 3 or 4 digits.')
+    ])
+
+    def __str__(self):
+        return f"Payment Details for {self.user.username}"
+
+    def clean(self):
+        # Ensure at least one payment method is provided
+        if not (self.account_number or self.upi_id or self.card_number):
+            raise ValidationError("At least one payment method (Bank Account, UPI, or Card) must be provided.")
+
+        # If bank details are provided, all bank fields should be filled
+        if any([self.account_holder_name, self.account_number, self.ifsc_code]):
+            if not (self.account_holder_name and self.account_number and self.ifsc_code):
+                raise ValidationError("All bank details (Account Holder Name, Account Number, IFSC Code) must be provided if any bank detail is filled.")
+
+        # If card details are provided, all card fields should be filled
+        if any([self.card_number, self.name_on_card, self.expiry_date, self.cvv]):
+            if not (self.card_number and self.name_on_card and self.expiry_date and self.cvv):
+                raise ValidationError("All card details (Card Number, Name on Card, Expiry Date, CVV) must be provided if any card detail is filled.")
+
+# Signals for Transaction (unchanged)
 @receiver(pre_save, sender=Transaction)
 def update_wallet_on_transaction_save(sender, instance, **kwargs):
-    if instance.pk:  # Existing transaction being updated
+    if instance.pk:
         old_transaction = Transaction.objects.get(pk=instance.pk)
         if old_transaction.amount != instance.amount or old_transaction.transaction_type != instance.transaction_type:
             instance.wallet.update_from_transactions()
@@ -184,7 +211,6 @@ def update_wallet_on_transaction_save(sender, instance, **kwargs):
             elif instance.transaction_type == 'ADD_INCOME' and old_transaction.transaction_type != 'ADD_INCOME':
                 instance.wallet.total_income += instance.amount
             instance.wallet.save()
-
 
 @receiver(pre_delete, sender=Transaction)
 def prevent_transaction_delete(sender, instance, **kwargs):

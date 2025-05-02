@@ -281,20 +281,16 @@ class CustomerProfileView(APIView):
     def get(self, request):
         serializer = CustomerProfileSerializer(request.user)
         return Response(serializer.data)
-
+    
+    # The serializer's update method handles both user and payment details
     def put(self, request):
         user = request.user
         serializer = CustomerProfileSerializer(user, data=request.data, partial=True)
 
         if serializer.is_valid():
-            # Only allow updating name, mobile_number, country — rest are readonly via serializer Meta
-            user.name = serializer.validated_data.get('name', user.name)
-            user.mobile_number = serializer.validated_data.get('mobile_number', user.mobile_number)
-            user.country = serializer.validated_data.get('country', user.country)
-            user.save()
-
+            serializer.save() 
             return Response(CustomerProfileSerializer(user).data)
-        return Response(serializer.errors, status=400)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class MyReferralsView(APIView):

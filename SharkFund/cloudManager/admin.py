@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, Wallet, Transaction
+from .models import CustomUser, Wallet, Transaction, PaymentDetail
 from django import forms
 from django.core.exceptions import ValidationError
 
@@ -16,13 +16,12 @@ class TransactionAdminForm(forms.ModelForm):
         amount = cleaned_data.get('amount')
         wallet = self.instance.wallet if self.instance and self.instance.pk else None
 
-        # If this is a new transaction, wallet should be set via the inline
         if not wallet and 'wallet' in self.data:
             try:
                 wallet_id = self.data['wallet']
                 wallet = Wallet.objects.get(id=wallet_id)
             except (Wallet.DoesNotExist, ValueError, KeyError):
-                pass  # Wallet will be validated by the parent form
+                pass
 
         if transaction_type == 'WITHDRAWAL' and wallet:
             try:
@@ -39,20 +38,38 @@ class TransactionAdminForm(forms.ModelForm):
 # Inline for Transaction model within Wallet
 class TransactionInline(admin.TabularInline):
     model = Transaction
-    form = TransactionAdminForm  # Use the custom form
-    extra = 1  # Number of empty forms to display
+    form = TransactionAdminForm
+    extra = 1
     fields = ('amount', 'transaction_type', 'timestamp', 'description')
-    readonly_fields = ('timestamp',)  # Corrected: Proper tuple with 'timestamp' as the only readonly field
+    readonly_fields = ('timestamp',)
+
+# Inline for PaymentDetail model within CustomUser
+class PaymentDetailInline(admin.StackedInline):
+    model = PaymentDetail
+    extra = 0  # No extra empty forms since it's one-to-one
+    can_delete = False  # Prevent deletion since it's one-to-one
+
+    fieldsets = (
+        ('Bank Account Info', {
+            'fields': (('account_holder_name', 'account_number', 'ifsc_code'),),
+        }),
+        ('UPI Details', {
+            'fields': ('upi_id',),
+        }),
+        ('Card Details', {
+            'fields': (('card_number', 'name_on_card'), ('expiry_date', 'cvv')),
+        }),
+    )
 
 # Inline for Wallet model within CustomUser
 class WalletInline(admin.TabularInline):
     model = Wallet
-    extra = 0  # No extra empty forms since it's one-to-one
-    fields = ()  # No editable fields
-    readonly_fields = ('total_income', 'total_withdrawal', 'wallet_balance', 'created_at')  # All fields read-only
+    extra = 0
+    fields = ()
+    readonly_fields = ('total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
     inlines = [TransactionInline]
 
-# Custom User Admin with referral properties and Wallet inline
+# Custom User Admin with referral properties, Wallet inline, and PaymentDetail inline
 class CustomUserAdmin(UserAdmin):
     list_display = ('username', 'name', 'email', 'total_referrals', 'active_referrals', 'total_team', 'active_team', 'is_staff')
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups')
@@ -67,12 +84,11 @@ class CustomUserAdmin(UserAdmin):
     )
     readonly_fields = ('join_date', 'last_active', 'total_referrals', 'active_referrals', 'total_team', 'active_team')
 
-    inlines = [WalletInline]
+    inlines = [WalletInline, PaymentDetailInline]
 
     def get_readonly_fields(self, request, obj=None):
-        """Make certain fields readonly for existing objects."""
         readonly_fields = super().get_readonly_fields(request, obj)
-        if obj:  # Editing an existing object
+        if obj:
             return readonly_fields + ('username', 'email', 'referred_by')
         return readonly_fields
 
@@ -90,7 +106,6 @@ class CustomUserAdmin(UserAdmin):
 
     def active_team(self, obj):
         return obj.active_team
-    positions = ['Long', 'Short']
     active_team.short_description = 'Active Team'
 
 # Wallet Admin with Transaction inline
@@ -98,10 +113,11 @@ class WalletAdmin(admin.ModelAdmin):
     list_display = ('user', 'total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
     list_filter = ('created_at',)
     search_fields = ('user__username', 'user__email')
-    readonly_fields = ('total_income', 'total_withdrawal', 'wallet_balance', 'created_at')  # All fields read-only
-    fields = ()  # No editable fields
+    readonly_fields = ('total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
+    fields = ()
     inlines = [TransactionInline]
 
 # Register the models with their admins
 admin.site.register(CustomUser, CustomUserAdmin)
 admin.site.register(Wallet, WalletAdmin)
+admin.site.register(PaymentDetail)
