@@ -7,7 +7,8 @@ from .serializers import (
     ForgetPasswordSerializer, VerifyOTPSerializer,
     ResetPasswordSerializer, UserProfileSerializer,
     TransactionHistorySerializer, WithdrawalHistorySerializer,
-    CustomerProfileSerializer, ReferralSerializer
+    CustomerProfileSerializer, ReferralSerializer,
+    MonthlyIncomeSerializer
 )
 
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -15,7 +16,7 @@ from rest_framework_simplejwt.views import TokenRefreshView as BaseTokenRefreshV
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
-from .models import Transaction, CustomUser
+from .models import Transaction, CustomUser, MonthlyIncome
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
@@ -306,4 +307,14 @@ class MyReferralsView(APIView):
         # Serialize the data
         serializer = ReferralSerializer(referrals, many=True)
 
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+
+class MonthlyIncomeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        monthly_incomes = MonthlyIncome.objects.filter(user=request.user)
+        serializer = MonthlyIncomeSerializer(monthly_incomes, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

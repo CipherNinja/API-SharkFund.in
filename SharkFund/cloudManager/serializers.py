@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, OTP, Transaction, PaymentDetail
+from .models import CustomUser, OTP, Transaction, PaymentDetail, MonthlyIncome
 from datetime import timedelta
 import random
 import string
@@ -423,3 +423,25 @@ class ReferralSerializer(serializers.ModelSerializer):
     def get_status(self, obj):
         # Determine if the user is active based on wallet_balance
         return "Active" if obj.wallet.wallet_balance >= 1000 else "Inactive"
+    
+
+# ... (previous serializers remain unchanged)
+
+class MonthlyIncomeSerializer(serializers.ModelSerializer):
+    month = serializers.CharField()
+    monthlyPayout = serializers.SerializerMethodField()
+    monthlyIncome = serializers.SerializerMethodField()
+    totalIncome = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MonthlyIncome
+        fields = ['month', 'monthlyPayout', 'monthlyIncome', 'totalIncome']
+
+    def get_monthlyPayout(self, obj):
+        return f"₹{obj.monthly_payout:,.0f}"
+
+    def get_monthlyIncome(self, obj):
+        return f"₹{obj.monthly_income:,.0f}"
+
+    def get_totalIncome(self, obj):
+        return f"₹{obj.total_income:,.0f}"

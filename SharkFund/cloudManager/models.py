@@ -199,6 +199,21 @@ class PaymentDetail(models.Model):
             if not (self.card_number and self.name_on_card and self.expiry_date and self.cvv):
                 raise ValidationError("All card details (Card Number, Name on Card, Expiry Date, CVV) must be provided if any card detail is filled.")
 
+class MonthlyIncome(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='monthly_incomes')
+    month = models.CharField(max_length=20)  # e.g., "January 2025"
+    monthly_payout = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    monthly_income = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    total_income = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'month')  # Prevent duplicate entries for the same user and month
+        ordering = ['-month']  # Order by month descending (most recent first)
+
+    def __str__(self):
+        return f"{self.month} Income for {self.user.username}"
+
 # Signals for Transaction (unchanged)
 @receiver(pre_save, sender=Transaction)
 def update_wallet_on_transaction_save(sender, instance, **kwargs):

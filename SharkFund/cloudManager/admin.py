@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, Wallet, Transaction, PaymentDetail
+from .models import CustomUser, Wallet, Transaction, PaymentDetail, MonthlyIncome
 from django import forms
 from django.core.exceptions import ValidationError
 
@@ -69,6 +69,13 @@ class WalletInline(admin.TabularInline):
     readonly_fields = ('total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
     inlines = [TransactionInline]
 
+
+class MonthlyIncomeInline(admin.TabularInline):
+    model = MonthlyIncome
+    extra = 1  # Show one empty form for adding a new record
+    fields = ('month', 'monthly_payout', 'monthly_income', 'total_income')
+    readonly_fields = ('created_at',)
+
 # Custom User Admin with referral properties, Wallet inline, and PaymentDetail inline
 class CustomUserAdmin(UserAdmin):
     list_display = ('username', 'name', 'email', 'total_referrals', 'active_referrals', 'total_team', 'active_team', 'is_staff')
@@ -84,7 +91,7 @@ class CustomUserAdmin(UserAdmin):
     )
     readonly_fields = ('join_date', 'last_active', 'total_referrals', 'active_referrals', 'total_team', 'active_team')
 
-    inlines = [WalletInline, PaymentDetailInline]
+    inlines = [WalletInline, PaymentDetailInline, MonthlyIncomeInline]
 
     def get_readonly_fields(self, request, obj=None):
         readonly_fields = super().get_readonly_fields(request, obj)
