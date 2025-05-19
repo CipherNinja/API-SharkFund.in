@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, OTP, Transaction, PaymentDetail, MonthlyIncome
+from .models import CustomUser, OTP, Transaction, PaymentDetail, MonthlyIncome, PaymentScreenshot
 from datetime import timedelta
 import random
 import string
@@ -425,7 +425,6 @@ class ReferralSerializer(serializers.ModelSerializer):
         return "Active" if obj.wallet.wallet_balance >= 1000 else "Inactive"
     
 
-# ... (previous serializers remain unchanged)
 
 class MonthlyIncomeSerializer(serializers.ModelSerializer):
     month = serializers.CharField()
@@ -445,3 +444,38 @@ class MonthlyIncomeSerializer(serializers.ModelSerializer):
 
     def get_totalIncome(self, obj):
         return f"₹{obj.total_income:,.0f}"
+    
+
+
+# cloudManager/serializers.py
+from rest_framework import serializers
+from .models import PaymentScreenshot
+
+class PaymentScreenshotSerializer(serializers.ModelSerializer):
+    screenshot = serializers.ImageField(max_length=None, use_url=True)
+
+    class Meta:
+        model = PaymentScreenshot
+        fields = ['id', 'amount', 'screenshot', 'status', 'created_at']
+        read_only_fields = ['id', 'status', 'created_at']
+
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Amount must be greater than zero.")
+        return value
+
+    def validate_screenshot(self, value):
+        max_size = 5 * 1024 * 1024  # 5MB
+        if value.size > max_size:
+            raise serializers.ValidationError("Screenshot file size must not exceed 5MB.")
+        return value
+
+    def create(self, validated_data):
+        user = self.context['request'].user
+        if not user.is_authenticated:
+            raise serializers.ValidationError("User must be authenticated.")
+        print(f"[Serializer] Creating PaymentScreenshot for user: {user.username}, amount: {validated_data['amount']}")
+        validated_data['user'] = user
+        instance = super().create(validated_data)
+        print(f"[Serializer] Created PaymentScreenshot with ID: {instance.id}, screenshot: {instance.screenshot.url}")
+        return instance

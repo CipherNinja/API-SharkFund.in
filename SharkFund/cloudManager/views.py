@@ -8,7 +8,7 @@ from .serializers import (
     ResetPasswordSerializer, UserProfileSerializer,
     TransactionHistorySerializer, WithdrawalHistorySerializer,
     CustomerProfileSerializer, ReferralSerializer,
-    MonthlyIncomeSerializer
+    MonthlyIncomeSerializer, PaymentScreenshotSerializer
 )
 
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -318,3 +318,22 @@ class MonthlyIncomeView(APIView):
         monthly_incomes = MonthlyIncome.objects.filter(user=request.user)
         serializer = MonthlyIncomeSerializer(monthly_incomes, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+class PaymentScreenshotUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        print(f"[View] Received POST request from user: {request.user.username}")
+        print(f"[View] Request data: {dict(request.data)}")
+        serializer = PaymentScreenshotSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            print(f"[View] Serializer saved successfully: {serializer.data}")
+            return Response({
+                'message': 'Payment screenshot uploaded successfully',
+                'data': serializer.data
+            }, status=status.HTTP_201_CREATED)
+        print(f"[View] Serializer errors: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

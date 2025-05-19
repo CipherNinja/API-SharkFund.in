@@ -1,8 +1,9 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, Wallet, Transaction, PaymentDetail, MonthlyIncome
+from .models import CustomUser, Wallet, Transaction, PaymentDetail, MonthlyIncome, PaymentScreenshot
 from django import forms
 from django.core.exceptions import ValidationError
+from django.utils.html import format_html
 
 # Custom form for Transaction model to handle validation errors
 class TransactionAdminForm(forms.ModelForm):
@@ -78,26 +79,19 @@ class MonthlyIncomeInline(admin.TabularInline):
 
 # Custom User Admin with referral properties, Wallet inline, and PaymentDetail inline
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'name', 'email', 'total_referrals', 'active_referrals', 'total_team', 'active_team', 'is_staff')
-    list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups')
+    list_display = ('username', 'name', 'email', 'status', 'total_referrals', 'active_referrals', 'total_team', 'active_team', 'is_staff')
+    list_filter = ('status', 'is_staff', 'is_superuser', 'is_active', 'groups')
     search_fields = ('username', 'email', 'mobile_number')
-    ordering = ('-date_joined',)
+    ordering = ('-join_date',)
 
     fieldsets = (
         (None, {'fields': ('username', 'password')}),
-        ('Personal Info', {'fields': ('email', 'address', 'mobile_number', 'referred_by')}),
-        ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        ('Personal Info', {'fields': ('name', 'email', 'address', 'mobile_number', 'referred_by')}),
+        ('Permissions', {'fields': ('status', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
         ('Important Dates', {'fields': ('join_date', 'last_active')}),
     )
-    readonly_fields = ('join_date', 'last_active', 'total_referrals', 'active_referrals', 'total_team', 'active_team')
 
     inlines = [WalletInline, PaymentDetailInline, MonthlyIncomeInline]
-
-    def get_readonly_fields(self, request, obj=None):
-        readonly_fields = super().get_readonly_fields(request, obj)
-        if obj:
-            return readonly_fields + ('username', 'email', 'referred_by')
-        return readonly_fields
 
     def total_referrals(self, obj):
         return obj.total_referrals
@@ -124,6 +118,22 @@ class WalletAdmin(admin.ModelAdmin):
     fields = ()
     inlines = [TransactionInline]
 
+
+@admin.register(PaymentScreenshot)
+class PaymentScreenshotAdmin(admin.ModelAdmin):
+    list_display = ('user', 'amount', 'status', 'created_at', 'screenshot_preview')
+    list_filter = ('status', 'created_at')
+    search_fields = ('user__username', 'user__email')
+    fields = ('user', 'amount', 'screenshot', 'status', 'created_at')
+    readonly_fields = ('created_at', 'screenshot_preview')
+    list_editable = ('status',)
+    ordering = ('-created_at',)
+
+    def screenshot_preview(self, obj):
+        if obj.screenshot:
+            return format_html('<img src="{}" style="max-height: 100px;"/>', obj.screenshot.url)
+        return "No screenshot"
+    screenshot_preview.short_description = 'Screenshot'
 # Register the models with their admins
 admin.site.register(CustomUser, CustomUserAdmin)
 admin.site.register(Wallet, WalletAdmin)

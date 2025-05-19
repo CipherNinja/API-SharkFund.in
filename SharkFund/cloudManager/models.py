@@ -6,6 +6,17 @@ from django.db.models.signals import pre_save, pre_delete
 from django.dispatch import receiver
 from django.core.exceptions import ValidationError
 
+# Choices for account activation status
+ACCOUNT_STATUS_CHOICES = (
+    ('Active', 'Active'),
+    ('InActive', 'InActive'),
+)
+
+PAYMENT_STATUS_CHOICES = (
+    ('Confirmed', 'Confirmed'),
+    ('Pending', 'Pending'),
+    ('Failed', 'Failed'),
+)
 class CustomUser(AbstractUser):
     name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)
@@ -13,8 +24,15 @@ class CustomUser(AbstractUser):
     mobile_number = models.CharField(max_length=15, null=True, blank=True)
     referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='referrals')
     join_date = models.DateTimeField(default=timezone.now)
-    last_active = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=10,
+        choices=ACCOUNT_STATUS_CHOICES,
+        default='InActive',
+        verbose_name="Account Status"
+    )
+    last_active = models.DateTimeField(null=True, blank=True, verbose_name="Activation Date")
     country = models.CharField(default="India", max_length=100)
+
 
     def __str__(self):
         return self.username
@@ -26,7 +44,7 @@ class CustomUser(AbstractUser):
     @property
     def total_team(self):
         def count_referrals(user):
-            referrals = user.referrals.all()
+            referrals = user.referrals.all()  # Count all referrals, regardless of status
             direct_count = referrals.count()
             indirect_count = sum(count_referrals(referral) for referral in referrals)
             return direct_count + indirect_count
@@ -38,7 +56,7 @@ class CustomUser(AbstractUser):
         def collect_active_referrals(user):
             if not hasattr(user, 'wallet'):
                 return
-            if user.wallet.wallet_balance >= 1000:
+            if user.status == 'Active':  # Check status and balance
                 active_users.add(user.id)
             for referral in user.referrals.all():
                 collect_active_referrals(referral)
@@ -50,12 +68,13 @@ class CustomUser(AbstractUser):
         return len(active_users)
 
     @property
+    def active_referrals(self):
+        return self.referrals.filter(status='Active').distinct().count()
+
+    @property
     def total_referrals(self):
         return self.referrals.count()
 
-    @property
-    def active_referrals(self):
-        return self.referrals.filter(wallet__wallet_balance__gte=1000).distinct().count()
 
 class OTP(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
@@ -208,11 +227,25 @@ class MonthlyIncome(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('user', 'month')  # Prevent duplicate entries for the same user and month
-        ordering = ['-month']  # Order by month descending (most recent first)
+        unique_together = ('user', 'month')
+        ordering = ['-month'] 
 
     def __str__(self):
         return f"{self.month} Income for {self.user.username}"
+    
+
+
+class PaymentScreenshot(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='payment_screenshots')
+    amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
+    status = models.CharField(choices=PAYMENT_STATUS_CHOICES,max_length=20,default="Pending",verbose_name="Payment Status")
+    screenshot = models.ImageField(upload_to='payment_screenshots/%Y/%m/%d/')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Payment of {self.amount} by {self.user.username} on {self.created_at}"
+
+
 
 # Signals for Transaction (unchanged)
 @receiver(pre_save, sender=Transaction)
