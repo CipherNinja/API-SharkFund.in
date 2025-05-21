@@ -503,41 +503,51 @@ class PaymentScreenshotSerializer(serializers.ModelSerializer):
     
 
 
-class WithdrawalTransactionSerializer(serializers.ModelSerializer):
+from rest_framework import serializers
+from .models import Transaction, PaymentDetail, CustomUser
+
+
+class WithdrawalRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
-        fields = ['amount', 'description']
+        fields = ['amount']  # Only accept amount from frontend
 
     def validate(self, data):
         user = self.context['request'].user
 
-        # Check at least one payment method (UPI or bank)
-        payment_detail = getattr(user, 'payment_detail', None)
-        if not payment_detail or (not payment_detail.upi_id and not payment_detail.account_number):
-            raise serializers.ValidationError("Please provide either UPI ID or complete bank details to withdraw funds.")
+        # Check if user has payment details
+        try:
+            payment_detail = user.payment_detail
+        except PaymentDetail.DoesNotExist:
+            raise serializers.ValidationError("Payment details not found.")
 
-        # Check if user has at least 2 active referrals
+        # Check for valid UPI or valid bank account
+        has_upi = bool(payment_detail.upi_id)
+        has_bank = all([
+            payment_detail.account_holder_name,
+            payment_detail.account_number,
+            payment_detail.ifsc_code,
+        ])
+
+        if not (has_upi or has_bank):
+            raise serializers.ValidationError("Please provide either UPI or complete Bank Account details to withdraw.")
+
+        # Check for at least 2 active referrals
         active_referrals = CustomUser.objects.filter(
-            referred_by__username=user.username,
+            referred_by=user.username,
             status='ACTIVE'
         ).count()
-        if active_referrals < 2:
-            raise serializers.ValidationError("You need at least 2 active referrals to withdraw funds.")
 
-        # Add default description
-        data['description'] = f'{user} has requested to withdraw money'
+        if active_referrals < 2:
+            raise serializers.ValidationError("You need at least 2 active referrals to request a withdrawal.")
 
         return data
 
-
     def create(self, validated_data):
         user = self.context['request'].user
-        wallet = user.wallet
-
         return Transaction.objects.create(
-            wallet=wallet,
+            user=user,
             amount=validated_data['amount'],
-            description=validated_data.get('description', f'{user} has requested to withdraw money'),
-            transaction_type='WITHDRAWAL',
-            status='PENDING'
+            transaction_type='withdrawal',
+            status='pending'
         )
