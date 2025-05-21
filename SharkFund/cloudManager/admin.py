@@ -41,7 +41,7 @@ class TransactionInline(admin.TabularInline):
     model = Transaction
     form = TransactionAdminForm
     extra = 1
-    fields = ('amount', 'transaction_type', 'timestamp', 'description')
+    fields = ('amount', 'transaction_type','status', 'timestamp', 'description')
     readonly_fields = ('timestamp',)
 
 # Inline for PaymentDetail model within CustomUser
