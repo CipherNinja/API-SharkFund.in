@@ -2,7 +2,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models, transaction
 from django.utils import timezone
 from django.core.validators import MinValueValidator, RegexValidator
-from django.db.models.signals import pre_save, pre_delete
+from django.db.models.signals import pre_save, pre_delete, post_save
 from django.dispatch import receiver
 from django.core.exceptions import ValidationError
 
@@ -144,7 +144,8 @@ class Wallet(models.Model):
 class Transaction(models.Model):
     wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='transactions')
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
-    transaction_type = models.CharField(max_length=10, choices=[('DEPOSIT', 'Deposit'), ('WITHDRAWAL', 'Withdrawal'), ('ADD_INCOME', 'Add Income')])
+    transaction_type = models.CharField(max_length=10, choices=[('DEPOSIT', 'Deposit'), ('WITHDRAWAL', 'Withdrawal')])
+    status = models.CharField(max_length=10, choices=[('COMPLETED', 'Completed'), ('PENDING', 'Pending'), ('Failed', 'Failed')])
     timestamp = models.DateTimeField(default=timezone.now)
     description = models.TextField(blank=True, null=True)
 
@@ -263,3 +264,15 @@ def update_wallet_on_transaction_save(sender, instance, **kwargs):
 @receiver(pre_delete, sender=Transaction)
 def prevent_transaction_delete(sender, instance, **kwargs):
     print(f"Attempted deletion of transaction {instance.id} for wallet {instance.wallet.user.username} at {timezone.now()}")
+    
+    
+@receiver(post_save, sender=CustomUser)
+def create_user_wallet(sender, instance, created, **kwargs):
+    if created:
+        Wallet.objects.create(
+            user=instance,
+            total_income=0.00,
+            total_withdrawal=0.00,
+            wallet_balance=0.00,
+            created_at=timezone.now()
+        )

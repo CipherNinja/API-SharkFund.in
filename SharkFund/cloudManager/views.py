@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import generics, permissions
+from rest_framework.exceptions import ValidationError
 from .serializers import (
     CustomUserSerializer, LoginSerializer,
     ForgetPasswordSerializer, VerifyOTPSerializer,
@@ -11,6 +12,15 @@ from .serializers import (
     MonthlyIncomeSerializer, PaymentScreenshotSerializer
 )
 
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView as BaseTokenRefreshView
 from django.core.mail import send_mail
@@ -19,6 +29,10 @@ from django.utils.html import strip_tags
 from .models import Transaction, CustomUser, MonthlyIncome
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
+import logging
+logger = logging.getLogger(__name__)
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 
 class CustomTokenRefreshView(BaseTokenRefreshView):
     def post(self, request, *args, **kwargs):
@@ -35,49 +49,62 @@ class CustomTokenRefreshView(BaseTokenRefreshView):
 
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class RegisterView(APIView):
     def post(self, request):
+        logger.info("RegisterView: Received request with data: %s", request.data)
         serializer = CustomUserSerializer(data=request.data)
-        if serializer.is_valid():
-            try:
+        try:
+            if serializer.is_valid(raise_exception=True):
+                logger.info("RegisterView: Serializer validated data: %s", serializer.validated_data)
                 user = serializer.save()
+                logger.info("RegisterView: User created with username: %s", user.username)
                 refresh = RefreshToken.for_user(user)
+                logger.info("RegisterView: Refresh token generated for user: %s", user.username)
                 response = Response({
                     'message': 'User registered successfully',
                     'user': {
                         'username': user.username,
                     }
                 }, status=status.HTTP_201_CREATED)
-                # Set cookies without Secure and SameSite for development
                 response.set_cookie(
                     'access_token',
                     str(refresh.access_token),
                     httponly=True,
-                    max_age=3600 , # 1 hour
-                    samesite='None'
+                    max_age=3600,
+                    samesite='None',
+                    secure=True
                 )
                 response.set_cookie(
                     'refresh_token',
                     str(refresh),
                     httponly=True,
-                    max_age=86400,  # 1 day
-                    samesite='None'
+                    max_age=86400,
+                    samesite='None',
+                    secure=True
                 )
+                logger.info("RegisterView: Cookies set, returning response")
                 return response
-            except Exception as e:
-                return Response({
-                    'errors': [f"Registration failed: {str(e)}"]
-                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        else:
+        except ValidationError as e:
+            logger.warning("RegisterView: Validation error: %s", str(e))
             errors = {}
-            for field, error_list in serializer.errors.items():
+            for field, error_list in e.detail.items():
                 if field == 'non_field_errors':
                     errors['general'] = error_list
+                elif field == 'mobile':  # Map back to frontend field name
+                    errors['mobile_number'] = error_list
+                elif field == 'Referral':  # Map back to frontend field name
+                    errors['referred_by'] = error_list
                 else:
                     errors[field] = error_list
             return Response({
                 'errors': errors
             }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error("RegisterView: Unexpected exception: %s", str(e), exc_info=True)
+            return Response({
+                'errors': [f"Registration failed: {str(e)}"]
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 
 # Invoke-WebRequest -Uri "http://127.0.0.1:7877/api/v1/register/" -Method POST -Body '{"email":"user3@example.com","password":"securepassword123","confirm_password":"securepassword123","address":"123 Main St","mobile_number":"+1234567890"}' -Headers @{"Content-Type"="application/json";"Origin"="http://localhost:3000"}
@@ -218,19 +245,30 @@ class TeamReferralStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = request.user  # Get the authenticated user
+        user = request.user
 
-        # Calculate total team (direct + indirect referrals)
-        total_team = user.total_team
+        # Direct Referrals
+        direct_referrals = User.objects.filter(referred_by=user)
+        total_referrals = direct_referrals.count()
+        active_referrals = direct_referrals.filter(status='Active').count()
 
-        # Calculate active team (users with at least 1000 INR in transactions)
-        active_team = user.active_team
+        # Recursive function to get total and active team
+        def get_team(user):
+            total = 0
+            active = 0
+            referrals = User.objects.filter(referred_by=user)
 
-        # Calculate total referrals (direct referrals only)
-        total_referrals = user.total_referrals
+            for referral in referrals:
+                total += 1
+                if referral.status == 'Active':
+                    active += 1
+                sub_total, sub_active = get_team(referral)
+                total += sub_total
+                active += sub_active
 
-        # Calculate active referrals (direct referrals with at least 1000 INR in transactions)
-        active_referrals = user.active_referrals
+            return total, active
+
+        total_team, active_team = get_team(user)
 
         data = {
             'total_team': total_team,

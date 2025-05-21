@@ -6,7 +6,10 @@ import string
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
+import logging
+import re
 
+logger = logging.getLogger(__name__)
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     username_field = 'email'
@@ -18,15 +21,17 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 
 
-
 class CustomUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
     confirm_password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
-    referred_by = serializers.CharField(write_only=True, required=False, allow_blank=True)  # New field for referrer username
+    referred_by = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    username = serializers.CharField(required=True)  # Add username field
+    mobile_number = serializers.CharField(source='mobile', required=False, allow_blank=True)  # Map mobile to mobile_number
+    referred_by = serializers.CharField(source='Referral', required=False, allow_blank=True)  # Map Referral to referred_by
 
     class Meta:
         model = CustomUser
-        fields = ['name', 'email', 'password', 'confirm_password', 'address', 'mobile_number', 'referred_by']
+        fields = ['username', 'name', 'email', 'password', 'confirm_password', 'address', 'mobile_number', 'referred_by']
         extra_kwargs = {
             'email': {'required': True},
             'address': {'required': False},
@@ -35,86 +40,95 @@ class CustomUserSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, data):
-        # Check if password and confirm_password match
+        logger.info("CustomUserSerializer: Validating data: %s", data)
         if data['password'] != data['confirm_password']:
+            logger.warning("CustomUserSerializer: Passwords do not match")
             raise serializers.ValidationError({
                 "confirm_password": ["Passwords do not match."]
             })
-
-        # Basic password validation (e.g., minimum length)
         if len(data['password']) < 8:
+            logger.warning("CustomUserSerializer: Password too short")
             raise serializers.ValidationError({
                 "password": ["Password must be at least 8 characters long."]
             })
-
         return data
 
+    def validate_username(self, value):
+        logger.info("CustomUserSerializer: Validating username: %s", value)
+        # Ensure username is alphanumeric with underscores, 3-30 characters
+        if not re.match(r'^[a-zA-Z]+[0-9]{2,}$', value):
+            logger.warning("CustomUserSerializer: Invalid username format: %s", value)
+            raise serializers.ValidationError(["Username must be 3-30 characters long and contain only letters, numbers, or underscores."])
+        if CustomUser.objects.filter(username__iexact=value).exists():
+            logger.warning("CustomUserSerializer: Username already exists: %s", value)
+            raise serializers.ValidationError(["This username is already taken."])
+        return value
+
     def validate_email(self, value):
-        # Normalize email to lowercase to avoid case-sensitive duplicates
+        logger.info("CustomUserSerializer: Validating email: %s", value)
         value = value.lower()
-        if CustomUser.objects.filter(email=value).exists():
+        if CustomUser.objects.filter(email__iexact=value).exists():
+            logger.warning("CustomUserSerializer: Email already exists: %s", value)
             raise serializers.ValidationError(["This email is already registered."])
         return value
 
     def validate_mobile_number(self, value):
-        # Optional: Add basic mobile number validation
+        logger.info("CustomUserSerializer: Validating mobile_number: %s", value)
         if value and not value.replace("+", "").isdigit():
+            logger.warning("CustomUserSerializer: Invalid mobile number format: %s", value)
             raise serializers.ValidationError(["Mobile number must contain only digits and an optional '+' prefix."])
         if value and len(value) > 15:
+            logger.warning("CustomUserSerializer: Mobile number too long: %s", value)
             raise serializers.ValidationError(["Mobile number is too long."])
         return value
 
     def validate_referred_by(self, value):
-        # Validate referrer username if provided
+        logger.info("CustomUserSerializer: Validating referred_by: %s", value)
         if value:
             try:
                 referrer = CustomUser.objects.get(username=value)
+                logger.info("CustomUserSerializer: Referrer found: %s", referrer.username)
                 return value
             except CustomUser.DoesNotExist:
+                logger.warning("CustomUserSerializer: Referrer not found: %s", value)
                 raise serializers.ValidationError(["Referrer with this username does not exist."])
         return value
 
     def create(self, validated_data):
-        # Remove confirm_password and referred_by as they are not model fields
+        logger.info("CustomUserSerializer: Creating user with validated data: %s", validated_data)
         validated_data.pop('confirm_password')
-        referred_by_username = validated_data.pop('referred_by', None)
-
-        # Generate username: ugr_YEAR_NUMBER
-        current_year = timezone.now().year
-        latest_user = CustomUser.objects.filter(
-            username__startswith=f'ugr_{current_year}_'
-        ).order_by('-username').first()
-
-        if latest_user:
-            try:
-                latest_number = int(latest_user.username.split('_')[-1])
-                new_number = latest_number + 1
-            except ValueError:
-                new_number = 1
-        else:
-            new_number = 1
-
-        username = f'ugr_{current_year}_{new_number}'
+        # Map back to model field names
+        referred_by_username = validated_data.pop('Referral', None)
+        mobile_number = validated_data.pop('mobile', None)
 
         try:
-            # Create the user
             user = CustomUser.objects.create_user(
+                username=validated_data['username'],
                 name=validated_data['name'],
-                username=username,
                 email=validated_data['email'].lower(),
                 password=validated_data['password'],
                 address=validated_data.get('address'),
-                mobile_number=validated_data.get('mobile_number')
+                mobile_number=mobile_number
             )
+            logger.info("CustomUserSerializer: User created: %s", user.username)
 
-            # Link referrer if referred_by_username is provided
             if referred_by_username:
-                referrer = CustomUser.objects.get(username=referred_by_username)
-                user.referred_by = referrer
-                user.save()
+                logger.info("CustomUserSerializer: Linking referrer: %s", referred_by_username)
+                try:
+                    referrer = CustomUser.objects.get(username=referred_by_username)
+                    user.referred_by = referrer
+                    user.save()
+                    logger.info("CustomUserSerializer: Referrer linked for user: %s", user.username)
+                except CustomUser.DoesNotExist:
+                    logger.error("CustomUserSerializer: Referrer %s not found during linking", referred_by_username)
+                    user.delete()
+                    raise serializers.ValidationError({
+                        "referred_by": ["Referrer does not exist."]
+                    })
 
             return user
         except Exception as e:
+            logger.error("CustomUserSerializer: Failed to create user: %s", str(e), exc_info=True)
             raise serializers.ValidationError({
                 "non_field_errors": [f"Failed to create user: {str(e)}"]
             })
@@ -244,7 +258,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
     wallet_balance = serializers.SerializerMethodField()
     total_withdrawal = serializers.SerializerMethodField()
     join_date = serializers.DateTimeField()
-
     activation_date = serializers.SerializerMethodField()
     active_status = serializers.SerializerMethodField()
 
@@ -256,33 +269,43 @@ class UserProfileSerializer(serializers.ModelSerializer):
         ]
 
     def get_total_income(self, obj):
-        if hasattr(obj, 'wallet'):
+        try:
             return obj.wallet.total_income
-        return 0.00
+        except obj.wallet.RelatedObjectDoesNotExist:
+            return 0.00
 
     def get_wallet_balance(self, obj):
-        if hasattr(obj, 'wallet'):
+        try:
             return obj.wallet.wallet_balance
-        return 0.00
+        except obj.wallet.RelatedObjectDoesNotExist:
+            return 0.00
 
     def get_total_withdrawal(self, obj):
-        if hasattr(obj, 'wallet'):
+        try:
             return obj.wallet.total_withdrawal
-        return 0.00
+        except obj.wallet.RelatedObjectDoesNotExist:
+            return 0.00
 
     def get_activation_date(self, obj):
-        if hasattr(obj, 'wallet'):
+        try:
             first_transaction = Transaction.objects.filter(wallet=obj.wallet).order_by('timestamp').first()
             if first_transaction:
                 return first_transaction.timestamp
-            else:
-                return "Inactive due to Insufficient Balance in wallet"
-        return "Wallet not created"
+            return "Inactive due to Insufficient Balance in wallet"
+        except obj.wallet.RelatedObjectDoesNotExist:
+            return "Wallet not created"
 
     def get_active_status(self, obj):
-        if hasattr(obj, 'wallet'):
+        try:
             return Transaction.objects.filter(wallet=obj.wallet, amount__gte=1000).exists()
-        return False
+        except obj.wallet.RelatedObjectDoesNotExist:
+            return False
+
+    def get_status(self, obj):
+        try:
+            return "Active" if obj.wallet.wallet_balance >= 1000 else "Inactive"
+        except obj.wallet.RelatedObjectDoesNotExist:
+            return "Inactive"
 
 
 class TransactionHistorySerializer(serializers.ModelSerializer):
