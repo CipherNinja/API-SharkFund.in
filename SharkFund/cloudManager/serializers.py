@@ -503,9 +503,13 @@ class PaymentScreenshotSerializer(serializers.ModelSerializer):
     
 
 
-from rest_framework import serializers
-from .models import Transaction, PaymentDetail, CustomUser
 
+from rest_framework import serializers
+from .models import Transaction, CustomUser, PaymentDetail
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 class WithdrawalRequestSerializer(serializers.ModelSerializer):
     class Meta:
@@ -513,12 +517,17 @@ class WithdrawalRequestSerializer(serializers.ModelSerializer):
         fields = ['amount']  # Only accept amount from frontend
 
     def validate(self, data):
+        logger.info("Starting validation in WithdrawalRequestSerializer")
         user = self.context['request'].user
+        logger.info(f"User: {user.username}")
 
         # Check if user has payment details
+        logger.info("Checking payment details")
         try:
             payment_detail = user.payment_detail
+            logger.info(f"Payment details found: UPI={payment_detail.upi_id}, Bank Account={payment_detail.account_number}")
         except PaymentDetail.DoesNotExist:
+            logger.error("Payment details not found for user")
             raise serializers.ValidationError("Payment details not found.")
 
         # Check for valid UPI or valid bank account
@@ -528,26 +537,42 @@ class WithdrawalRequestSerializer(serializers.ModelSerializer):
             payment_detail.account_number,
             payment_detail.ifsc_code,
         ])
+        logger.info(f"Has UPI: {has_upi}, Has Bank: {has_bank}")
 
         if not (has_upi or has_bank):
+            logger.error("Neither UPI nor complete bank details provided")
             raise serializers.ValidationError("Please provide either UPI or complete Bank Account details to withdraw.")
 
         # Check for at least 2 active referrals
+        logger.info("Checking active referrals")
         active_referrals = CustomUser.objects.filter(
-            referred_by=user.username,
-            status='ACTIVE'
+            referred_by=user,
+            status='Active'  # Changed to match model choice case
         ).count()
+        logger.info(f"Active referrals count: {active_referrals}")
 
         if active_referrals < 2:
+            logger.error("Insufficient active referrals")
             raise serializers.ValidationError("You need at least 2 active referrals to request a withdrawal.")
 
+        logger.info("Validation successful")
         return data
 
     def create(self, validated_data):
+        logger.info("Starting create method in WithdrawalRequestSerializer")
         user = self.context['request'].user
-        return Transaction.objects.create(
-            user=user,
-            amount=validated_data['amount'],
-            transaction_type='withdrawal',
-            status='pending'
-        )
+        logger.info(f"Creating transaction for user: {user.username}, amount: {validated_data['amount']}")
+        try:
+            wallet = user.wallet
+            logger.info(f"Wallet found: {wallet.id}")
+            transaction = Transaction.objects.create(
+                wallet=wallet,  # Changed from user to wallet to match model
+                amount=validated_data['amount'],
+                transaction_type='WITHDRAWAL',  # Match case from model choices
+                status='PENDING'  # Match case from model choices
+            )
+            logger.info(f"Transaction created: ID={transaction.id}, Type={transaction.transaction_type}, Status={transaction.status}")
+            return transaction
+        except Exception as e:
+            logger.error(f"Error creating transaction: {str(e)}")
+            raise
