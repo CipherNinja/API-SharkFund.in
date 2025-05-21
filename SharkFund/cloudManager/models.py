@@ -99,10 +99,11 @@ class Wallet(models.Model):
         return f"Wallet for {self.user.username}"
 
     def calculate_balance(self):
-        deposits = self.transactions.filter(transaction_type='DEPOSIT').aggregate(total=models.Sum('amount'))['total'] or 0
-        withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL').aggregate(total=models.Sum('amount'))['total'] or 0
-        add_income = self.transactions.filter(transaction_type='ADD_INCOME').aggregate(total=models.Sum('amount'))['total'] or 0
+        deposits = self.transactions.filter(transaction_type='DEPOSIT', status='SUCCESS').aggregate(total=models.Sum('amount'))['total'] or 0
+        withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL', status='SUCCESS').aggregate(total=models.Sum('amount'))['total'] or 0
+        add_income = self.transactions.filter(transaction_type='ADD_INCOME', status='SUCCESS').aggregate(total=models.Sum('amount'))['total'] or 0
         return deposits + add_income - withdrawals
+
 
     def update_from_transactions(self):
         deposits = self.transactions.filter(transaction_type='DEPOSIT').aggregate(total=models.Sum('amount'))['total'] or 0
