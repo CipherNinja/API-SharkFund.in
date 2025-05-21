@@ -6,7 +6,8 @@ from .views import (
     UserProfileView, TeamReferralStatsView,
     TransactionHistoryView, WithdrawalHistoryAPIView,
     CustomerProfileView, MyReferralsView,
-    MonthlyIncomeView, PaymentScreenshotUploadView
+    MonthlyIncomeView, PaymentScreenshotUploadView,
+    WithdrawalRequestAPIView
 )
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .serializers import CustomTokenObtainPairSerializer
@@ -35,7 +36,8 @@ urlpatterns = [
     path('api/v1/edit/information/', CustomerProfileView.as_view(), name='edit-profile'),
     path('api/v1/my-referrals/', MyReferralsView.as_view(), name='my-referrals'),
     path('api/v1/earnings/monthly/', MonthlyIncomeView.as_view(), name='monthly-income'),
-    path('api/v1/payments/upload/',PaymentScreenshotUploadView.as_view(),name="upload-payment")
+    path('api/v1/payments/upload/',PaymentScreenshotUploadView.as_view(),name="upload-payment"),
+    path('api/v1/withdrawal/request/', WithdrawalRequestAPIView.as_view(), name='withdraw-request'),
     
     
 ]

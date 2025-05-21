@@ -9,7 +9,8 @@ from .serializers import (
     ResetPasswordSerializer, UserProfileSerializer,
     TransactionHistorySerializer, WithdrawalHistorySerializer,
     CustomerProfileSerializer, ReferralSerializer,
-    MonthlyIncomeSerializer, PaymentScreenshotSerializer
+    MonthlyIncomeSerializer, PaymentScreenshotSerializer,
+    WithdrawalTransactionSerializer,
 )
 
 from django.contrib.auth import get_user_model
@@ -374,4 +375,19 @@ class PaymentScreenshotUploadView(APIView):
                 'data': serializer.data
             }, status=status.HTTP_201_CREATED)
         print(f"[View] Serializer errors: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+class WithdrawalRequestAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = WithdrawalTransactionSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            transaction = serializer.save()
+            return Response({
+                'message': 'Withdrawal request submitted successfully.',
+                'transaction_id': transaction.id
+            }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

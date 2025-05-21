@@ -470,9 +470,7 @@ class MonthlyIncomeSerializer(serializers.ModelSerializer):
     
 
 
-# cloudManager/serializers.py
-from rest_framework import serializers
-from .models import PaymentScreenshot
+
 
 class PaymentScreenshotSerializer(serializers.ModelSerializer):
     screenshot = serializers.ImageField(max_length=None, use_url=True)
@@ -502,3 +500,48 @@ class PaymentScreenshotSerializer(serializers.ModelSerializer):
         instance = super().create(validated_data)
         print(f"[Serializer] Created PaymentScreenshot with ID: {instance.id}, screenshot: {instance.screenshot.url}")
         return instance
+    
+
+
+class WithdrawalTransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Transaction
+        fields = ['amount', 'description']
+
+    def validate(self, data):
+        user = self.context['request'].user
+
+        # Check Payment Detail exists
+        try:
+            payment_detail = user.payment_detail
+        except PaymentDetail.DoesNotExist:
+            raise serializers.ValidationError("Payment details not found. Please add UPI or bank details.")
+
+        has_upi = bool(payment_detail.upi_id)
+        has_bank = all([
+            payment_detail.account_holder_name,
+            payment_detail.account_number,
+            payment_detail.ifsc_code
+        ])
+
+        if not (has_upi or has_bank):
+            raise serializers.ValidationError("At least one valid payment method (UPI or complete Bank details) is required.")
+
+        # Check for at least 2 active referrals
+        active_referrals = CustomUser.objects.filter(referred_by=user.username, status='ACTIVE').count()
+        if active_referrals < 2:
+            raise serializers.ValidationError("You must have at least 2 active referrals to withdraw money.")
+
+        return data
+
+    def create(self, validated_data):
+        user = self.context['request'].user
+        wallet = user.wallet
+
+        return Transaction.objects.create(
+            wallet=wallet,
+            amount=validated_data['amount'],
+            description=validated_data.get('description', f'{user} has requested to withdraw money'),
+            transaction_type='WITHDRAWAL',
+            status='PENDING'
+        )
