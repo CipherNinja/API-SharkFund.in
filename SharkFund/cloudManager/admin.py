@@ -119,7 +119,7 @@ class WalletAdmin(admin.ModelAdmin):
     list_display = ('user', 'total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
     list_filter = ('created_at',)
     search_fields = ('user__username', 'user__email')
-    readonly_fields = ('total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
+    # readonly_fields = ('total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
     fields = ()
     inlines = [TransactionInline]
 
