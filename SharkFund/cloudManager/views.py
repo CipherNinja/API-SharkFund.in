@@ -10,7 +10,7 @@ from .serializers import (
     TransactionHistorySerializer, WithdrawalHistorySerializer,
     CustomerProfileSerializer, ReferralSerializer,
     MonthlyIncomeSerializer, PaymentScreenshotSerializer,
-    WithdrawalTransactionSerializer,
+    WithdrawalRequestSerializer,
 )
 
 from django.contrib.auth import get_user_model
@@ -383,7 +383,7 @@ class WithdrawalRequestAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        serializer = WithdrawalTransactionSerializer(data=request.data, context={'request': request})
+        serializer = WithdrawalRequestSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             transaction = serializer.save()
             return Response({
