@@ -18,6 +18,7 @@ PAYMENT_STATUS_CHOICES = (
     ('Pending', 'Pending'),
     ('Failed', 'Failed'),
 )
+
 class CustomUser(AbstractUser):
     name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)
@@ -33,7 +34,6 @@ class CustomUser(AbstractUser):
     )
     last_active = models.DateTimeField(null=True, blank=True, verbose_name="Activation Date")
     country = models.CharField(default="India", max_length=100)
-
 
     def __str__(self):
         return self.username
@@ -76,7 +76,6 @@ class CustomUser(AbstractUser):
     def total_referrals(self):
         return self.referrals.count()
 
-
 class OTP(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     otp = models.CharField(max_length=6)
@@ -104,7 +103,6 @@ class Wallet(models.Model):
         withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL', status='SUCCESS').aggregate(total=models.Sum('amount'))['total'] or 0
         add_income = self.transactions.filter(transaction_type='ADD_INCOME', status='SUCCESS').aggregate(total=models.Sum('amount'))['total'] or 0
         return deposits + add_income - withdrawals
-
 
     def update_from_transactions(self):
         deposits = self.transactions.filter(transaction_type='DEPOSIT').aggregate(total=models.Sum('amount'))['total'] or 0
@@ -147,13 +145,12 @@ class Transaction(models.Model):
     wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='transactions')
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
     transaction_type = models.CharField(max_length=10, choices=[('DEPOSIT', 'Deposit'), ('WITHDRAWAL', 'Withdrawal')])
-    status = models.CharField(max_length=10, choices=[('COMPLETED', 'Completed'), ('PENDING', 'Pending'), ('Failed', 'Failed')])
+    status = models.CharField(max_length=10, choices=[('COMPLETED', 'Completed'), ('PENDING', 'Pending'), ('FAILED', 'Failed')])
     timestamp = models.DateTimeField(default=timezone.now)
     description = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return f"{self.transaction_type} of ${self.amount} for {self.wallet.user.username}"
-
 
     @transaction.atomic
     def save(self, *args, **kwargs):
@@ -203,7 +200,6 @@ class Transaction(models.Model):
         elif self.transaction_type == 'ADD_INCOME':
             wallet.total_income += self.amount
             wallet.wallet_balance += self.amount
-
 
 class PaymentDetail(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='payment_detail')
@@ -266,22 +262,18 @@ class MonthlyIncome(models.Model):
 
     def __str__(self):
         return f"{self.month} Income for {self.user.username}"
-    
-
 
 class PaymentScreenshot(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='payment_screenshots')
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
-    status = models.CharField(choices=PAYMENT_STATUS_CHOICES,max_length=20,default="Pending",verbose_name="Payment Status")
+    status = models.CharField(choices=PAYMENT_STATUS_CHOICES, max_length=20, default="Pending", verbose_name="Payment Status")
     screenshot = models.ImageField(upload_to='payment_screenshots/%Y/%m/%d/')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Payment of {self.amount} by {self.user.username} on {self.created_at}"
 
-
-
-# Signals for Transaction (unchanged)
+# Signals for Transaction
 @receiver(pre_save, sender=Transaction)
 def update_wallet_on_transaction_save(sender, instance, **kwargs):
     if instance.pk:
@@ -297,8 +289,7 @@ def update_wallet_on_transaction_save(sender, instance, **kwargs):
 @receiver(pre_delete, sender=Transaction)
 def prevent_transaction_delete(sender, instance, **kwargs):
     print(f"Attempted deletion of transaction {instance.id} for wallet {instance.wallet.user.username} at {timezone.now()}")
-    
-    
+
 @receiver(post_save, sender=CustomUser)
 def create_user_wallet(sender, instance, created, **kwargs):
     if created:
@@ -309,3 +300,29 @@ def create_user_wallet(sender, instance, created, **kwargs):
             wallet_balance=0.00,
             created_at=timezone.now()
         )
+
+# Signals for MonthlyIncome
+@receiver(post_save, sender=MonthlyIncome)
+def update_wallet_on_monthly_income_save(sender, instance, created, **kwargs):
+    if created:
+        wallet = Wallet.objects.select_for_update().get(user=instance.user)
+        with transaction.atomic():
+            # Credit total_income and wallet_balance
+            wallet.total_income += instance.total_income
+            wallet.wallet_balance += instance.total_income
+            wallet.save()
+
+@receiver(pre_delete, sender=MonthlyIncome)
+def update_wallet_on_monthly_income_delete(sender, instance, **kwargs):
+    wallet = Wallet.objects.select_for_update().get(user=instance.user)
+    with transaction.atomic():
+        # Debit total_income and wallet_balance
+        if wallet.wallet_balance >= instance.total_income:
+            wallet.total_income -= instance.total_income
+            wallet.wallet_balance -= instance.total_income
+            wallet.save()
+        else:
+            raise ValidationError(
+                f"Cannot delete monthly income: Insufficient wallet balance ({wallet.wallet_balance}) "
+                f"to debit {instance.total_income}."
+            )
