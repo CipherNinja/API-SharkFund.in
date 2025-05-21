@@ -325,7 +325,7 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
         return "PayPal"
 
     def get_status(self, obj):
-        return "Completed"
+        return obj.status.title()  # E.g., 'COMPLETED' -> 'Completed'
 
 
 class WithdrawalHistorySerializer(serializers.ModelSerializer):
@@ -345,7 +345,7 @@ class WithdrawalHistorySerializer(serializers.ModelSerializer):
         return 'PayPal'
 
     def get_status(self, obj):
-        return 'Completed'
+        return obj.status.title()
 
 
 
