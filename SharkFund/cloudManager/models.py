@@ -5,6 +5,7 @@ from django.core.validators import MinValueValidator, RegexValidator
 from django.db.models.signals import pre_save, pre_delete, post_save
 from django.dispatch import receiver
 from django.core.exceptions import ValidationError
+from decimal import Decimal
 
 # Choices for account activation status
 ACCOUNT_STATUS_CHOICES = (
@@ -153,25 +154,56 @@ class Transaction(models.Model):
     def __str__(self):
         return f"{self.transaction_type} of ${self.amount} for {self.wallet.user.username}"
 
+
     @transaction.atomic
     def save(self, *args, **kwargs):
-        is_new = not self.pk
-        if is_new and self.transaction_type == 'WITHDRAWAL':
-            wallet = Wallet.objects.select_for_update().get(id=self.wallet.id)
-            current_balance = wallet.calculate_balance()
-            if current_balance < self.amount:
-                raise ValidationError(
-                    f"Insufficient funds: Current balance is {current_balance}, but withdrawal amount is {self.amount}."
-                )
-        super().save(*args, **kwargs)
-        if is_new and self.transaction_type == 'ADD_INCOME':
-            self.wallet.total_income += self.amount
-            self.wallet.save()
-        self.wallet.update_from_transactions()
+        is_new = self._state.adding  # True if this is a new transaction
+        wallet = Wallet.objects.select_for_update().get(pk=self.wallet.pk)
 
-    def delete(self, *args, **kwargs):
-        print(f"Attempted deletion of transaction {self.id} for wallet {self.wallet.user.username} at {timezone.now()}")
-        return None
+        # Fetch previous transaction if it exists
+        previous = None
+        if not is_new:
+            previous = Transaction.objects.get(pk=self.pk)
+
+        # Perform default save
+        super().save(*args, **kwargs)
+
+        # Apply changes only if status is 'COMPLETED'
+        if self.status == 'COMPLETED':
+            # If new transaction
+            if is_new:
+                self._apply_wallet_changes(wallet, Decimal('0.00'))
+            # If updated transaction
+            elif previous:
+                self._apply_wallet_changes(wallet, previous.amount, previous.transaction_type, previous.status)
+
+            wallet.save()
+
+    def _apply_wallet_changes(self, wallet, old_amount, old_type=None, old_status=None):
+        """
+        Adjust wallet based on the transaction type and previous state (for updates).
+        """
+        # Undo old effect if necessary
+        if old_status == 'COMPLETED':
+            if old_type == 'DEPOSIT':
+                wallet.total_withdrawal -= old_amount
+            elif old_type == 'WITHDRAWAL':
+                wallet.wallet_balance += old_amount
+            elif old_type == 'ADD_INCOME':
+                wallet.total_income -= old_amount
+
+        # Apply new effect
+        if self.transaction_type == 'DEPOSIT':
+            wallet.wallet_balance += self.amount
+        elif self.transaction_type == 'WITHDRAWAL':
+            if wallet.wallet_balance < self.amount:
+                raise ValidationError(f"Insufficient funds: balance={wallet.wallet_balance}, withdrawal={self.amount}")
+            wallet.wallet_balance -= self.amount
+            wallet.total_withdrawal += self.amount
+        elif self.transaction_type == 'ADD_INCOME':
+            wallet.total_income += self.amount
+            wallet.wallet_balance += self.amount
+
 
 class PaymentDetail(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='payment_detail')

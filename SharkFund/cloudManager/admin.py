@@ -27,6 +27,11 @@ class TransactionAdminForm(forms.ModelForm):
         if transaction_type == 'WITHDRAWAL' and wallet:
             try:
                 current_balance = wallet.calculate_balance()
+
+                # Adjust balance if editing an existing withdrawal
+                if self.instance.pk and self.instance.transaction_type == 'WITHDRAWAL':
+                    current_balance += self.instance.amount
+
                 if amount > current_balance:
                     raise ValidationError(
                         f"Withdrawal amount ({amount}) exceeds available balance ({current_balance})."
