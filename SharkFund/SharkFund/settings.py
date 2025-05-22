@@ -62,12 +62,12 @@ MIDDLEWARE = [
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 
 # SMTP configuration for erp@agratasinfotech.com
-EMAIL_HOST = 'mail.agratasinfotech.com'  # The SMTP server from your screenshot
+EMAIL_HOST = 'mail.sharkfund.in'  # The SMTP server from your screenshot
 EMAIL_PORT = 465  # Use port 465 for SSL
 EMAIL_USE_SSL = True  # SSL for secure connection
-EMAIL_HOST_USER = 'erp@agratasinfotech.com'  # Your new email
-EMAIL_HOST_PASSWORD = ')0,ame!qM}I2'  # Replace with the actual password
-DEFAULT_FROM_EMAIL = 'erp@agratasinfotech.com'  # The default 'From' email
+EMAIL_HOST_USER = 'no-reply@sharkfund.in'  # Your new email
+EMAIL_HOST_PASSWORD = '391U^Z-6U*[+'  # Replace with the actual password
+DEFAULT_FROM_EMAIL = 'no-reply@sharkfund.in'  # The default 'From' email
 
 # Set EMAIL_USE_TLS = False since you're using SSL (port 465)
 EMAIL_USE_TLS = False
