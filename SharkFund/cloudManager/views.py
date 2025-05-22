@@ -165,7 +165,7 @@ class ForgetPasswordView(APIView):
                 send_mail(
                     subject='SharFund Password Reset OTP',
                     message=plain_message,
-                    from_email='erp@agratasinfotech.com',
+                    from_email='no-reply@sharkfund.in',
                     recipient_list=[user.email],
                     html_message=html_message,
                     fail_silently=False,
