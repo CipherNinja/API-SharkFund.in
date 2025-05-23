@@ -92,7 +92,7 @@ class Wallet(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='wallet')
     total_income = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
     total_withdrawal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
-    wallet_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)], editable=False)
+    wallet_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
     created_at = models.DateTimeField(default=timezone.now)
 
     def __str__(self):

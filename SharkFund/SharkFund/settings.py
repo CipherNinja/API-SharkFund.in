@@ -66,7 +66,7 @@ EMAIL_HOST = 'mail.sharkfund.in'  # The SMTP server from your screenshot
 EMAIL_PORT = 465  # Use port 465 for SSL
 EMAIL_USE_SSL = True  # SSL for secure connection
 EMAIL_HOST_USER = 'no-reply@sharkfund.in'  # Your new email
-EMAIL_HOST_PASSWORD = '391U^Z-6U*[+'  # Replace with the actual password
+EMAIL_HOST_PASSWORD = 'RG@O7,RnzIQr'  # Replace with the actual password
 DEFAULT_FROM_EMAIL = 'no-reply@sharkfund.in'  # The default 'From' email
 
 # Set EMAIL_USE_TLS = False since you're using SSL (port 465)
@@ -107,7 +107,7 @@ ROOT_URLCONF = 'SharkFund.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [r'C:\Users\Priyesh Pandey\OneDrive\Desktop\API-SharkFund.in\SharkFund\cloudManager\templates'],
+        'DIRS': [os.path.join(BASE_DIR, 'cloudManager', 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
