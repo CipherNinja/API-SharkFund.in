@@ -209,9 +209,7 @@ class PaymentDetail(models.Model):
     account_number = models.CharField(max_length=20, blank=True, null=True, validators=[
         RegexValidator(r'^\d+$', 'Account number must contain only digits.')
     ])
-    ifsc_code = models.CharField(max_length=11, blank=True, null=True, validators=[
-        RegexValidator(r'^[A-Za-z]{4}0[A-Za-z0-9]{6}$', 'Invalid IFSC code format.')
-    ])
+    ifsc_code = models.CharField(max_length=11, blank=True, null=True)
 
     # UPI Details
     upi_id = models.CharField(max_length=100, blank=True, null=True, validators=[
