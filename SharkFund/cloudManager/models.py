@@ -215,7 +215,7 @@ class PaymentDetail(models.Model):
 
     # UPI Details
     upi_id = models.CharField(max_length=100, blank=True, null=True, validators=[
-        RegexValidator(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', 'Invalid UPI ID format.')
+        RegexValidator(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9]+$', 'Invalid UPI ID format.')
     ])
 
     # Card Details
