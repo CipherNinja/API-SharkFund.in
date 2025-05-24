@@ -83,7 +83,7 @@ class MonthlyIncomeInline(admin.TabularInline):
 
 # Custom User Admin with referral properties, Wallet inline, and PaymentDetail inline
 class CustomUserAdmin(UserAdmin):
-    list_display = ('username', 'name', 'email', 'status', 'total_referrals', 'active_referrals', 'total_team', 'active_team', 'is_staff')
+    list_display = ('username', 'name','referred_by', 'email', 'status', 'total_referrals', 'active_referrals', 'total_team', 'active_team', 'is_staff')
     list_filter = ('status', 'is_staff', 'is_superuser', 'is_active', 'groups')
     search_fields = ('username', 'email', 'mobile_number')
     ordering = ('-join_date',)
