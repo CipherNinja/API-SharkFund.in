@@ -7,7 +7,7 @@ from .serializers import (
     CustomUserSerializer, LoginSerializer,
     ForgetPasswordSerializer, VerifyOTPSerializer,
     ResetPasswordSerializer, UserProfileSerializer,
-    TransactionHistorySerializer, WithdrawalHistorySerializer,
+    DepositHistorySerializer, WithdrawalHistorySerializer,
     CustomerProfileSerializer, ReferralSerializer,
     MonthlyIncomeSerializer, PaymentScreenshotSerializer,
     WithdrawalRequestSerializer, TransactionIncomeSerializer
@@ -282,7 +282,7 @@ class TeamReferralStatsView(APIView):
 
 
 
-class TransactionHistoryView(APIView):
+class DepositHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):

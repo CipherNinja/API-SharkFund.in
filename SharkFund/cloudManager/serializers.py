@@ -308,7 +308,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     def get_active_status(self, obj):
         return obj.status == 'Active'
 
-class TransactionHistorySerializer(serializers.ModelSerializer):
+class DepositHistorySerializer(serializers.ModelSerializer):
     serial_number = serializers.SerializerMethodField()
     method = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
@@ -322,11 +322,21 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
         return self.context['serial_number_map'][obj.id]
 
     def get_method(self, obj):
-        return "PayPal"
+        """Return the actual payment method from the Transaction model"""
+        return "UPI"  # Fallback to 'UPI' if not set
 
     def get_status(self, obj):
+        """Capitalize status for display"""
         return obj.status.title()  # E.g., 'COMPLETED' -> 'Completed'
 
+    def validate(self, data):
+        """Ensure only DEPOSIT transactions are serialized"""
+        obj = self.instance or Transaction(**data)
+        if obj.transaction_type != 'DEPOSIT':
+            raise serializers.ValidationError(
+                f"Only DEPOSIT transactions are allowed, got {obj.transaction_type}"
+            )
+        return data
 
 class WithdrawalHistorySerializer(serializers.ModelSerializer):
     serial_number = serializers.SerializerMethodField()
@@ -338,14 +348,25 @@ class WithdrawalHistorySerializer(serializers.ModelSerializer):
         fields = ['serial_number', 'amount', 'timestamp', 'method', 'status']
 
     def get_serial_number(self, obj):
-        # Serial number based on the queryset order in the view
-        return self.context['serial_number']
+        """Serial number based on queryset ordering"""
+        return self.context['serial_number_map'][obj.id]
 
     def get_method(self, obj):
-        return 'PayPal'
+        """Return the actual payment method from the Transaction model"""
+        return "UPI"  # Fallback to 'UPI' if not set
 
     def get_status(self, obj):
-        return obj.status.title()
+        """Capitalize status for display"""
+        return obj.status.title()  # E.g., 'COMPLETED' -> 'Completed'
+
+    def validate(self, data):
+        """Ensure only WITHDRAWAL transactions are serialized"""
+        obj = self.instance or Transaction(**data)
+        if obj.transaction_type != 'WITHDRAWAL':
+            raise serializers.ValidationError(
+                f"Only WITHDRAWAL transactions are allowed, got {obj.transaction_type}"
+            )
+        return data
 
 
 

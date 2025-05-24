@@ -4,7 +4,7 @@ from .views import (
     LoginView, ForgetPasswordView,
     VerifyOTPView, ResetPasswordView, 
     UserProfileView, TeamReferralStatsView,
-    TransactionHistoryView, WithdrawalHistoryAPIView,
+    DepositHistoryView, WithdrawalHistoryAPIView,
     CustomerProfileView, MyReferralsView,
     MonthlyIncomeView, PaymentScreenshotUploadView,
     WithdrawalRequestAPIView
@@ -31,7 +31,7 @@ urlpatterns = [
     # Dashboard Data
     path('api/v1/profile/', UserProfileView.as_view(), name='user-profile'),
     path('api/v1/stats/', TeamReferralStatsView.as_view(), name='team-stats'),
-    path('api/v1/transaction/history/', TransactionHistoryView.as_view(), name='transaction-history'),
+    path('api/v1/transaction/history/', DepositHistoryView.as_view(), name='transaction-history'),
     path('api/v1/withdrawal/history/', WithdrawalHistoryAPIView.as_view(), name='withdrawal-history'),
     path('api/v1/edit/information/', CustomerProfileView.as_view(), name='edit-profile'),
     path('api/v1/my-referrals/', MyReferralsView.as_view(), name='my-referrals'),
