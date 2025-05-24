@@ -329,14 +329,15 @@ class DepositHistorySerializer(serializers.ModelSerializer):
         """Capitalize status for display"""
         return obj.status.title()  # E.g., 'COMPLETED' -> 'Completed'
 
-    def validate(self, data):
+    def validate(self, attrs):
         """Ensure only DEPOSIT transactions are serialized"""
-        obj = self.instance or Transaction(**data)
+        # Use the instance if available (for existing objects) or attrs for new data
+        obj = self.instance or Transaction(**attrs)
         if obj.transaction_type != 'DEPOSIT':
             raise serializers.ValidationError(
                 f"Only DEPOSIT transactions are allowed, got {obj.transaction_type}"
             )
-        return data
+        return attrs
 
 class WithdrawalHistorySerializer(serializers.ModelSerializer):
     serial_number = serializers.SerializerMethodField()
@@ -359,14 +360,15 @@ class WithdrawalHistorySerializer(serializers.ModelSerializer):
         """Capitalize status for display"""
         return obj.status.title()  # E.g., 'COMPLETED' -> 'Completed'
 
-    def validate(self, data):
+    def validate(self, attrs):
         """Ensure only WITHDRAWAL transactions are serialized"""
-        obj = self.instance or Transaction(**data)
+        # Use the instance if available (for existing objects) or attrs for new data
+        obj = self.instance or Transaction(**attrs)
         if obj.transaction_type != 'WITHDRAWAL':
             raise serializers.ValidationError(
                 f"Only WITHDRAWAL transactions are allowed, got {obj.transaction_type}"
             )
-        return data
+        return attrs
 
 
 
