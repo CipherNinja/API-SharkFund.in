@@ -322,10 +322,21 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
         return self.context['serial_number_map'][obj.id]
 
     def get_method(self, obj):
-        return "PayPal"
+        """Return the actual payment method from the Transaction model"""
+        return obj.payment_method or "UPI"  # Fallback to 'UPI' if not set
 
     def get_status(self, obj):
+        """Capitalize status for display"""
         return obj.status.title()  # E.g., 'COMPLETED' -> 'Completed'
+
+    def validate(self, data):
+        """Ensure only DEPOSIT transactions are serialized"""
+        obj = self.instance or Transaction(**data)
+        if obj.transaction_type != 'DEPOSIT':
+            raise serializers.ValidationError(
+                f"Only DEPOSIT transactions are allowed, got {obj.transaction_type}"
+            )
+        return data
 
 
 class WithdrawalHistorySerializer(serializers.ModelSerializer):
