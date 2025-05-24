@@ -473,8 +473,8 @@ class ReferralSerializer(serializers.ModelSerializer):
         fields = ['username', 'name', 'mobile_number', 'join_date', 'status']
 
     def get_status(self, obj):
-        """Return the user's status from CustomUser.status"""
-        return obj.status
+        """Return 'Active' or 'Not Active' based on CustomUser.status"""
+        return "Active" if obj.status == "Active" else "Not Active"
     
 
 
