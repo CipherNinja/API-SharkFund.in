@@ -473,8 +473,8 @@ class ReferralSerializer(serializers.ModelSerializer):
         fields = ['username', 'name', 'mobile_number', 'join_date', 'status']
 
     def get_status(self, obj):
-        # Determine if the user is active based on wallet_balance
-        return "Active" if obj.wallet.wallet_balance >= 1000 else "Inactive"
+        """Return the user's status from CustomUser.status"""
+        return obj.status
     
 
 
