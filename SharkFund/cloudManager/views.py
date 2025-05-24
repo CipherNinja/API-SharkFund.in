@@ -286,17 +286,24 @@ class DepositHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Fetch user's transactions ordered by timestamp
-        transactions = Transaction.objects.filter(wallet__user=request.user).order_by('timestamp')
+        # Fetch user's DEPOSIT transactions ordered by timestamp
+        transactions = Transaction.objects.filter(
+            wallet__user=request.user,
+            transaction_type='DEPOSIT'
+        ).order_by('-timestamp')
+        
+        logger.info(f"Fetched {transactions.count()} DEPOSIT transactions for user {request.user.username}")
         
         # Prepare serial number mapping (id -> serial number)
         serial_number_map = {txn.id: idx + 1 for idx, txn in enumerate(transactions)}
 
         # Pass serial number mapping into context
         serializer = DepositHistorySerializer(
-            transactions, many=True, context={'serial_number_map': serial_number_map}
+            transactions,
+            many=True,
+            context={'serial_number_map': serial_number_map}
         )
-        return Response(serializer.data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class WithdrawalHistoryAPIView(APIView):
