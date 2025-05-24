@@ -293,7 +293,7 @@ class DepositHistoryView(APIView):
         serial_number_map = {txn.id: idx + 1 for idx, txn in enumerate(transactions)}
 
         # Pass serial number mapping into context
-        serializer = TransactionHistorySerializer(
+        serializer = DepositHistorySerializer(
             transactions, many=True, context={'serial_number_map': serial_number_map}
         )
         return Response(serializer.data)
