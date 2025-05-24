@@ -319,7 +319,11 @@ class DepositHistorySerializer(serializers.ModelSerializer):
 
     def get_serial_number(self, obj):
         """Serial number based on queryset ordering"""
-        return self.context['serial_number_map'][obj.id]
+        serial_number_map = self.context.get('serial_number_map')
+        if serial_number_map is None:
+            logger.warning(f"serial_number_map missing in context for DepositHistorySerializer, obj.id={obj.id}")
+            return None  # Fallback: return None or a default value
+        return serial_number_map.get(obj.id, None)
 
     def get_method(self, obj):
         """Return the actual payment method from the Transaction model"""
@@ -331,7 +335,6 @@ class DepositHistorySerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         """Ensure only DEPOSIT transactions are serialized"""
-        # Use the instance if available (for existing objects) or attrs for new data
         obj = self.instance or Transaction(**attrs)
         if obj.transaction_type != 'DEPOSIT':
             raise serializers.ValidationError(
@@ -350,7 +353,11 @@ class WithdrawalHistorySerializer(serializers.ModelSerializer):
 
     def get_serial_number(self, obj):
         """Serial number based on queryset ordering"""
-        return self.context['serial_number_map'][obj.id]
+        serial_number_map = self.context.get('serial_number_map')
+        if serial_number_map is None:
+            logger.warning(f"serial_number_map missing in context for WithdrawalHistorySerializer, obj.id={obj.id}")
+            return None  # Fallback: return None or a default value
+        return serial_number_map.get(obj.id, None)
 
     def get_method(self, obj):
         """Return the actual payment method from the Transaction model"""
@@ -362,7 +369,6 @@ class WithdrawalHistorySerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         """Ensure only WITHDRAWAL transactions are serialized"""
-        # Use the instance if available (for existing objects) or attrs for new data
         obj = self.instance or Transaction(**attrs)
         if obj.transaction_type != 'WITHDRAWAL':
             raise serializers.ValidationError(
