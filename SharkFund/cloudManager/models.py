@@ -6,6 +6,11 @@ from django.db.models.signals import pre_save, pre_delete, post_save
 from django.dispatch import receiver
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+from django.db.models import Sum
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # Choices for account activation status
 ACCOUNT_STATUS_CHOICES = (
@@ -45,7 +50,7 @@ class CustomUser(AbstractUser):
     @property
     def total_team(self):
         def count_referrals(user):
-            referrals = user.referrals.all()  # Count all referrals, regardless of status
+            referrals = user.referrals.all()
             direct_count = referrals.count()
             indirect_count = sum(count_referrals(referral) for referral in referrals)
             return direct_count + indirect_count
@@ -57,7 +62,7 @@ class CustomUser(AbstractUser):
         def collect_active_referrals(user):
             if not hasattr(user, 'wallet'):
                 return
-            if user.status == 'Active':  # Check status and balance
+            if user.status == 'Active':
                 active_users.add(user.id)
             for referral in user.referrals.all():
                 collect_active_referrals(referral)
@@ -90,6 +95,8 @@ class OTP(models.Model):
 
 class Wallet(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='wallet')
+    total_deposit = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
+    refer_income = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
     total_income = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
     total_withdrawal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
     wallet_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
@@ -99,53 +106,99 @@ class Wallet(models.Model):
         return f"Wallet for {self.user.username}"
 
     def calculate_balance(self):
-        deposits = self.transactions.filter(transaction_type='DEPOSIT', status='SUCCESS').aggregate(total=models.Sum('amount'))['total'] or 0
-        withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL', status='SUCCESS').aggregate(total=models.Sum('amount'))['total'] or 0
-        add_income = self.transactions.filter(transaction_type='ADD_INCOME', status='SUCCESS').aggregate(total=models.Sum('amount'))['total'] or 0
-        return deposits + add_income - withdrawals
+        """
+        Calculate withdrawable balance (INCOME + REFERRAL minus WITHDRAWAL transactions).
+        """
+        income = self.transactions.filter(transaction_type='INCOME', status='COMPLETED').aggregate(total=Sum('amount'))['total'] or 0
+        referral = self.transactions.filter(transaction_type='REFERRAL', status='COMPLETED').aggregate(total=Sum('amount'))['total'] or 0
+        withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL', status='COMPLETED').aggregate(total=Sum('amount'))['total'] or 0
+        return income + referral - withdrawals
 
     def update_from_transactions(self):
-        deposits = self.transactions.filter(transaction_type='DEPOSIT').aggregate(total=models.Sum('amount'))['total'] or 0
-        withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL').aggregate(total=models.Sum('amount'))['total'] or 0
-        add_income = self.transactions.filter(transaction_type='ADD_INCOME').aggregate(total=models.Sum('amount'))['total'] or 0
+        """
+        Update wallet fields based on transactions.
+        """
+        deposits = self.transactions.filter(transaction_type__in=['DEPOSIT', 'RESET_DEPOSIT'], status='COMPLETED').aggregate(total=Sum('amount'))['total'] or 0
+        withdrawals = self.transactions.filter(transaction_type='WITHDRAWAL', status='COMPLETED').aggregate(total=Sum('amount'))['total'] or 0
+        incomes = self.transactions.filter(transaction_type='INCOME', status='COMPLETED').aggregate(total=Sum('amount'))['total'] or 0
+        referrals = self.transactions.filter(transaction_type='REFERRAL', status='COMPLETED').aggregate(total=Sum('amount'))['total'] or 0
+
+        logger.info(f"Updating wallet for {self.user.username}: deposits={deposits}, incomes={incomes}, referrals={referrals}, withdrawals={withdrawals}")
+
+        self.total_deposit = max(deposits, 0)
+        self.total_income = incomes
+        self.refer_income = referrals
         self.total_withdrawal = withdrawals
-        self.wallet_balance = deposits + add_income - withdrawals
+        self.wallet_balance = incomes + referrals - withdrawals
         self.save()
 
     @transaction.atomic
     def add_funds(self, amount):
+        """
+        Add funds to total_deposit (non-withdrawable).
+        """
         if amount <= 0:
             return False, "Amount must be positive."
-        Transaction.objects.create(wallet=self, amount=amount, transaction_type='DEPOSIT')
-        self.update_from_transactions()
-        return True, "Deposit successful."
+        try:
+            transaction = Transaction.objects.create(
+                wallet=self,
+                amount=amount,
+                transaction_type='DEPOSIT',
+                status='COMPLETED',
+                description=f"Deposit of {amount}"
+            )
+            logger.info(f"Created DEPOSIT transaction {transaction.id} for {self.user.username} with amount {amount}")
+            self.update_from_transactions()
+            logger.info(f"Updated total_deposit for {self.user.username} to {self.total_deposit}")
+            return True, "Deposit successful."
+        except Exception as e:
+            logger.error(f"Failed to add funds for {self.user.username}: {str(e)}")
+            return False, f"Deposit failed: {str(e)}"
 
     @transaction.atomic
     def withdraw_funds(self, amount):
+        """
+        Withdraw funds from wallet_balance only.
+        """
         if amount <= 0:
             return False, "Amount must be positive."
         self.refresh_from_db()
         current_balance = self.calculate_balance()
         if current_balance < amount:
-            return False, f"Insufficient funds: Current balance is {current_balance}, but withdrawal amount is {amount}."
-        Transaction.objects.create(wallet=self, amount=amount, transaction_type='WITHDRAWAL')
-        self.update_from_transactions()
-        return True, "Withdrawal successful."
-
-    @transaction.atomic
-    def add_income(self, amount):
-        if amount <= 0:
-            return False, "Amount must be positive."
-        Transaction.objects.create(wallet=self, amount=amount, transaction_type='ADD_INCOME')
-        self.total_income += amount
-        self.update_from_transactions()
-        return True, "Income added successfully."
+            return False, f"Insufficient withdrawable balance: Current balance is {current_balance}, but withdrawal amount is {amount}."
+        try:
+            transaction = Transaction.objects.create(
+                wallet=self,
+                amount=amount,
+                transaction_type='WITHDRAWAL',
+                status='COMPLETED',
+                description=f"Withdrawal of {amount}"
+            )
+            logger.info(f"Created WITHDRAWAL transaction {transaction.id} for {self.user.username} with amount {amount}")
+            self.update_from_transactions()
+            return True, "Withdrawal successful."
+        except Exception as e:
+            logger.error(f"Failed to withdraw funds for {self.user.username}: {str(e)}")
+            return False, f"Withdrawal failed: {str(e)}"
 
 class Transaction(models.Model):
     wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='transactions')
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0.01)])
-    transaction_type = models.CharField(max_length=10, choices=[('DEPOSIT', 'Deposit'), ('WITHDRAWAL', 'Withdrawal')])
-    status = models.CharField(max_length=10, choices=[('COMPLETED', 'Completed'), ('PENDING', 'Pending'), ('FAILED', 'Failed')])
+    transaction_type = models.CharField(
+        max_length=15,
+        choices=[
+            ('DEPOSIT', 'Deposit'),
+            ('WITHDRAWAL', 'Withdrawal'),
+            ('INCOME', 'Income'),
+            ('RESET_DEPOSIT', 'Reset Deposit'),
+            ('REFERRAL', 'Referral'),
+        ]
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=[('COMPLETED', 'Completed'), ('PENDING', 'Pending'), ('FAILED', 'Failed')],
+        default='PENDING'
+    )
     timestamp = models.DateTimeField(default=timezone.now)
     description = models.TextField(blank=True, null=True)
 
@@ -154,72 +207,35 @@ class Transaction(models.Model):
 
     @transaction.atomic
     def save(self, *args, **kwargs):
-        is_new = self._state.adding  # True if this is a new transaction
+        is_new = self._state.adding
         wallet = Wallet.objects.select_for_update().get(pk=self.wallet.pk)
-
-        # Fetch previous transaction if it exists
         previous = None
         if not is_new:
             previous = Transaction.objects.get(pk=self.pk)
 
-        # Perform default save
+        if is_new and self.transaction_type == 'WITHDRAWAL' and self.status == 'COMPLETED':
+            if wallet.calculate_balance() < self.amount:
+                logger.error(f"Insufficient balance for WITHDRAWAL transaction for {wallet.user.username}: balance={wallet.calculate_balance()}, amount={self.amount}")
+                raise ValidationError(f"Insufficient withdrawable balance: {wallet.calculate_balance()} available, {self.amount} requested.")
+
         super().save(*args, **kwargs)
 
-        # Apply changes only if status is 'COMPLETED'
         if self.status == 'COMPLETED':
-            # If new transaction
-            if is_new:
-                self._apply_wallet_changes(wallet, Decimal('0.00'))
-            # If updated transaction
-            elif previous:
-                self._apply_wallet_changes(wallet, previous.amount, previous.transaction_type, previous.status)
-
-            wallet.save()
-
-    def _apply_wallet_changes(self, wallet, old_amount, old_type=None, old_status=None):
-        """
-        Adjust wallet based on the transaction type and previous state (for updates).
-        """
-        # Undo old effect if necessary
-        if old_status == 'COMPLETED':
-            if old_type == 'DEPOSIT':
-                wallet.total_withdrawal -= old_amount
-            elif old_type == 'WITHDRAWAL':
-                wallet.wallet_balance += old_amount
-            elif old_type == 'ADD_INCOME':
-                wallet.total_income -= old_amount
-
-        # Apply new effect
-        if self.transaction_type == 'DEPOSIT':
-            wallet.wallet_balance += self.amount
-        elif self.transaction_type == 'WITHDRAWAL':
-            if wallet.wallet_balance < self.amount:
-                raise ValidationError(f"Insufficient funds: balance={wallet.wallet_balance}, withdrawal={self.amount}")
-            wallet.wallet_balance -= self.amount
-            wallet.total_withdrawal += self.amount
-        elif self.transaction_type == 'ADD_INCOME':
-            wallet.total_income += self.amount
-            wallet.wallet_balance += self.amount
+            wallet.update_from_transactions()
+            logger.info(f"Transaction {self.id} ({self.transaction_type}) for {wallet.user.username} triggered wallet update")
 
 class PaymentDetail(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='payment_detail')
-    
-    # Bank Account Details
     account_holder_name = models.CharField(max_length=100, blank=True, null=True)
     account_number = models.CharField(max_length=20, blank=True, null=True, validators=[
         RegexValidator(r'^\d+$', 'Account number must contain only digits.')
     ])
     ifsc_code = models.CharField(max_length=11, blank=True, null=True, validators=[
         RegexValidator(r'^.{11}$', 'IFSC code must be exactly 11 characters.')
-
     ])
-
-    # UPI Details
     upi_id = models.CharField(max_length=100, blank=True, null=True, validators=[
         RegexValidator(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9]+$', 'Invalid UPI ID format.')
     ])
-
-    # Card Details
     card_number = models.CharField(max_length=19, blank=True, null=True, validators=[
         RegexValidator(r'^\d{16}$', 'Card number must be exactly 16 digits.')
     ])
@@ -235,23 +251,18 @@ class PaymentDetail(models.Model):
         return f"Payment Details for {self.user.username}"
 
     def clean(self):
-        # Ensure at least one payment method is provided
         if not (self.account_number or self.upi_id or self.card_number):
             raise ValidationError("At least one payment method (Bank Account, UPI, or Card) must be provided.")
-
-        # If bank details are provided, all bank fields should be filled
         if any([self.account_holder_name, self.account_number, self.ifsc_code]):
             if not (self.account_holder_name and self.account_number and self.ifsc_code):
-                raise ValidationError("All bank details (Account Holder Name, Account Number, IFSC Code) must be provided if any bank detail is filled.")
-
-        # If card details are provided, all card fields should be filled
+                raise ValidationError("All bank details must be provided if any bank detail is filled.")
         if any([self.card_number, self.name_on_card, self.expiry_date, self.cvv]):
             if not (self.card_number and self.name_on_card and self.expiry_date and self.cvv):
-                raise ValidationError("All card details (Card Number, Name on Card, Expiry Date, CVV) must be provided if any card detail is filled.")
+                raise ValidationError("All card details must be provided if any card detail is filled.")
 
 class MonthlyIncome(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='monthly_incomes')
-    month = models.CharField(max_length=20)  # e.g., "January 2025"
+    month = models.CharField(max_length=20)
     monthly_payout = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     monthly_income = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     total_income = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
@@ -259,7 +270,7 @@ class MonthlyIncome(models.Model):
 
     class Meta:
         unique_together = ('user', 'month')
-        ordering = ['-month'] 
+        ordering = ['-month']
 
     def __str__(self):
         return f"{self.month} Income for {self.user.username}"
@@ -274,56 +285,89 @@ class PaymentScreenshot(models.Model):
     def __str__(self):
         return f"Payment of {self.amount} by {self.user.username} on {self.created_at}"
 
-# Signals for Transaction
-@receiver(pre_save, sender=Transaction)
-def update_wallet_on_transaction_save(sender, instance, **kwargs):
-    if instance.pk:
-        old_transaction = Transaction.objects.get(pk=instance.pk)
-        if old_transaction.amount != instance.amount or old_transaction.transaction_type != instance.transaction_type:
-            instance.wallet.update_from_transactions()
-            if old_transaction.transaction_type == 'ADD_INCOME' and instance.transaction_type != 'ADD_INCOME':
-                instance.wallet.total_income -= old_transaction.amount
-            elif instance.transaction_type == 'ADD_INCOME' and old_transaction.transaction_type != 'ADD_INCOME':
-                instance.wallet.total_income += instance.amount
-            instance.wallet.save()
-
-@receiver(pre_delete, sender=Transaction)
-def prevent_transaction_delete(sender, instance, **kwargs):
-    print(f"Attempted deletion of transaction {instance.id} for wallet {instance.wallet.user.username} at {timezone.now()}")
-
+# Signals
 @receiver(post_save, sender=CustomUser)
 def create_user_wallet(sender, instance, created, **kwargs):
     if created:
         Wallet.objects.create(
             user=instance,
+            total_deposit=0.00,
+            refer_income=0.00,
             total_income=0.00,
             total_withdrawal=0.00,
             wallet_balance=0.00,
             created_at=timezone.now()
         )
 
-# Signals for MonthlyIncome
+@receiver(pre_save, sender=CustomUser)
+def handle_referral_income_on_activation(sender, instance, **kwargs):
+    if instance.pk:  # Only for existing users being updated
+        try:
+            old_instance = CustomUser.objects.get(pk=instance.pk)
+            if old_instance.status != 'Active' and instance.status == 'Active' and instance.referred_by:
+                referrer = instance.referred_by
+                if hasattr(referrer, 'wallet'):
+                    with transaction.atomic():
+                        Transaction.objects.create(
+                            wallet=referrer.wallet,
+                            amount=Decimal('400.00'),
+                            transaction_type='REFERRAL',
+                            status='COMPLETED',
+                            description=f"Referral bonus for {instance.username}'s activation"
+                        )
+                        logger.info(f"Credited ₹400 referral income to {referrer.username} for {instance.username}'s activation")
+                else:
+                    logger.warning(f"Referrer {referrer.username} has no wallet for referral income")
+        except CustomUser.DoesNotExist:
+            logger.error(f"User {instance.username} not found during pre_save")
+            pass
+
 @receiver(post_save, sender=MonthlyIncome)
 def update_wallet_on_monthly_income_save(sender, instance, created, **kwargs):
     if created:
         wallet = Wallet.objects.select_for_update().get(user=instance.user)
         with transaction.atomic():
-            # Credit total_income and wallet_balance
-            wallet.total_income += instance.total_income
-            wallet.wallet_balance += instance.total_income
-            wallet.save()
+            # Add INCOME transaction
+            Transaction.objects.create(
+                wallet=wallet,
+                amount=instance.total_income,
+                transaction_type='INCOME',
+                status='COMPLETED',
+                description=f"Monthly income for {instance.month}"
+            )
+            # Reset total_deposit with RESET_DEPOSIT transaction
+            current_deposit = wallet.transactions.filter(
+                transaction_type__in=['DEPOSIT', 'RESET_DEPOSIT'],
+                status='COMPLETED'
+            ).aggregate(total=Sum('amount'))['total'] or 0
+            if current_deposit > 0:
+                Transaction.objects.create(
+                    wallet=wallet,
+                    amount=-current_deposit,
+                    transaction_type='RESET_DEPOSIT',
+                    status='COMPLETED',
+                    description=f"Reset deposit for {instance.month}"
+                )
+            logger.info(f"Added MonthlyIncome for {instance.user.username}, created INCOME and RESET_DEPOSIT transactions")
 
 @receiver(pre_delete, sender=MonthlyIncome)
 def update_wallet_on_monthly_income_delete(sender, instance, **kwargs):
     wallet = Wallet.objects.select_for_update().get(user=instance.user)
     with transaction.atomic():
-        # Debit total_income and wallet_balance
-        if wallet.wallet_balance >= instance.total_income:
-            wallet.total_income -= instance.total_income
-            wallet.wallet_balance -= instance.total_income
-            wallet.save()
-        else:
-            raise ValidationError(
-                f"Cannot delete monthly income: Insufficient wallet balance ({wallet.wallet_balance}) "
-                f"to debit {instance.total_income}."
-            )
+        # Find corresponding INCOME transaction
+        income_tx = wallet.transactions.filter(
+            transaction_type='INCOME',
+            status='COMPLETED',
+            description=f"Monthly income for {instance.month}"
+        ).first()
+        if income_tx:
+            if wallet.calculate_balance() >= income_tx.amount:
+                income_tx.status = 'FAILED'  # Mark as failed instead of deleting
+                income_tx.save()
+                logger.info(f"Marked INCOME transaction for {instance.user.username} as FAILED for month {instance.month}")
+            else:
+                logger.error(f"Cannot delete MonthlyIncome for {instance.user.username}: Insufficient balance")
+                raise ValidationError(
+                    f"Cannot delete monthly income: Insufficient wallet balance ({wallet.calculate_balance()}) "
+                    f"to debit {instance.total_income}."
+                )

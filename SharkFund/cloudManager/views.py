@@ -10,11 +10,11 @@ from .serializers import (
     TransactionHistorySerializer, WithdrawalHistorySerializer,
     CustomerProfileSerializer, ReferralSerializer,
     MonthlyIncomeSerializer, PaymentScreenshotSerializer,
-    WithdrawalRequestSerializer,
+    WithdrawalRequestSerializer, TransactionIncomeSerializer
 )
 
 from django.contrib.auth import get_user_model
-
+from django.db.models import Sum
 User = get_user_model()
 
 import logging
@@ -349,13 +349,33 @@ class MyReferralsView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 
+from django.db.models.functions import TruncMonth
 
 class MonthlyIncomeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        monthly_incomes = MonthlyIncome.objects.filter(user=request.user)
-        serializer = MonthlyIncomeSerializer(monthly_incomes, many=True)
+        # Query INCOME transactions for the user, group by month
+        transactions = Transaction.objects.filter(
+            wallet__user=request.user,
+            transaction_type='INCOME',
+            status='COMPLETED'
+        ).annotate(
+            month=TruncMonth('timestamp')
+        ).values('month').annotate(
+            total_amount=Sum('amount')
+        ).order_by('-month')
+
+        # Transform to serializer-compatible format
+        income_data = [
+            {
+                'month': tx['month'].strftime('%B %Y'),
+                'amount': tx['total_amount']
+            }
+            for tx in transactions
+        ]
+
+        serializer = TransactionIncomeSerializer(income_data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 

@@ -252,11 +252,12 @@ class ResetPasswordSerializer(serializers.Serializer):
     
 
 
-
 class UserProfileSerializer(serializers.ModelSerializer):
+    total_deposit = serializers.SerializerMethodField()
+    refer_income = serializers.SerializerMethodField()
     total_income = serializers.SerializerMethodField()
-    wallet_balance = serializers.SerializerMethodField()
     total_withdrawal = serializers.SerializerMethodField()
+    wallet_balance = serializers.SerializerMethodField()
     join_date = serializers.DateTimeField()
     activation_date = serializers.SerializerMethodField()
     active_status = serializers.SerializerMethodField()
@@ -264,49 +265,48 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'username', 'total_income', 'wallet_balance', 'total_withdrawal',
+            'username', 'total_deposit', 'refer_income',
+            'total_income', 'total_withdrawal', 'wallet_balance',
             'join_date', 'activation_date', 'active_status'
         ]
 
-    def get_total_income(self, obj):
-        try:
-            return obj.wallet.total_income
-        except obj.wallet.RelatedObjectDoesNotExist:
-            return 0.00
+    def get_total_deposit(self, obj):
+        if hasattr(obj, 'wallet'):
+            return float(obj.wallet.total_deposit)
+        return 0.00
 
-    def get_wallet_balance(self, obj):
-        try:
-            return obj.wallet.wallet_balance
-        except obj.wallet.RelatedObjectDoesNotExist:
-            return 0.00
+    def get_refer_income(self, obj):
+        if hasattr(obj, 'wallet'):
+            return float(obj.wallet.refer_income)
+        return 0.00
+
+    def get_total_income(self, obj):
+        if hasattr(obj, 'wallet'):
+            return float(obj.wallet.total_income)
+        return 0.00
 
     def get_total_withdrawal(self, obj):
-        try:
-            return obj.wallet.total_withdrawal
-        except obj.wallet.RelatedObjectDoesNotExist:
-            return 0.00
+        if hasattr(obj, 'wallet'):
+            return float(obj.wallet.total_withdrawal)
+        return 0.00
+
+    def get_wallet_balance(self, obj):
+        if hasattr(obj, 'wallet'):
+            return float(obj.wallet.wallet_balance)
+        return 0.00
 
     def get_activation_date(self, obj):
-        try:
-            first_transaction = Transaction.objects.filter(wallet=obj.wallet).order_by('timestamp').first()
-            if first_transaction:
-                return first_transaction.timestamp
-            return "Inactive due to Insufficient Balance in wallet"
-        except obj.wallet.RelatedObjectDoesNotExist:
-            return "Wallet not created"
+        if hasattr(obj, 'wallet'):
+            first_transaction = Transaction.objects.filter(
+                wallet=obj.wallet,
+                transaction_type='DEPOSIT',
+                status='COMPLETED'
+            ).order_by('timestamp').first()
+            return first_transaction.timestamp if first_transaction else None
+        return None
 
     def get_active_status(self, obj):
-        try:
-            return Transaction.objects.filter(wallet=obj.wallet, amount__gte=1000).exists()
-        except obj.wallet.RelatedObjectDoesNotExist:
-            return False
-
-    def get_status(self, obj):
-        try:
-            return "Active" if obj.wallet.wallet_balance >= 1000 else "Inactive"
-        except obj.wallet.RelatedObjectDoesNotExist:
-            return "Inactive"
-
+        return obj.status == 'Active'
 
 class TransactionHistorySerializer(serializers.ModelSerializer):
     serial_number = serializers.SerializerMethodField()
@@ -469,7 +469,23 @@ class MonthlyIncomeSerializer(serializers.ModelSerializer):
         return f"₹{obj.total_income:,.0f}"
     
 
+class TransactionIncomeSerializer(serializers.Serializer):
+    month = serializers.CharField()
+    monthlyPayout = serializers.SerializerMethodField()
+    monthlyIncome = serializers.SerializerMethodField()
+    totalIncome = serializers.SerializerMethodField()
 
+    class Meta:
+        fields = ['month', 'monthlyPayout', 'monthlyIncome', 'totalIncome']
+
+    def get_monthlyPayout(self, obj):
+        return f"₹{obj['amount']:,.0f}"
+
+    def get_monthlyIncome(self, obj):
+        return f"₹{obj['amount']:,.0f}"
+
+    def get_totalIncome(self, obj):
+        return f"₹{obj['amount']:,.0f}"
 
 
 class PaymentScreenshotSerializer(serializers.ModelSerializer):

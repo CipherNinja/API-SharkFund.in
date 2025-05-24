@@ -46,15 +46,14 @@ class TransactionInline(admin.TabularInline):
     model = Transaction
     form = TransactionAdminForm
     extra = 1
-    fields = ('amount', 'transaction_type','status', 'timestamp', 'description')
+    fields = ('amount', 'transaction_type', 'status', 'timestamp', 'description')
     readonly_fields = ('timestamp',)
 
 # Inline for PaymentDetail model within CustomUser
 class PaymentDetailInline(admin.StackedInline):
     model = PaymentDetail
-    extra = 0  # No extra empty forms since it's one-to-one
-    can_delete = False  # Prevent deletion since it's one-to-one
-
+    extra = 0
+    can_delete = False
     fieldsets = (
         ('Bank Account Info', {
             'fields': (('account_holder_name', 'account_number', 'ifsc_code'),),
@@ -71,14 +70,14 @@ class PaymentDetailInline(admin.StackedInline):
 class WalletInline(admin.TabularInline):
     model = Wallet
     extra = 0
-    fields = ()
-    readonly_fields = ('total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
+    fields = ('total_deposit', 'refer_income', 'total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
+    readonly_fields = ('total_deposit', 'refer_income', 'total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
     inlines = [TransactionInline]
 
-
+# Inline for MonthlyIncome model within CustomUser
 class MonthlyIncomeInline(admin.TabularInline):
     model = MonthlyIncome
-    extra = 1  # Show one empty form for adding a new record
+    extra = 1
     fields = ('month', 'monthly_payout', 'monthly_income', 'total_income')
     readonly_fields = ('created_at',)
 
@@ -116,13 +115,12 @@ class CustomUserAdmin(UserAdmin):
 
 # Wallet Admin with Transaction inline
 class WalletAdmin(admin.ModelAdmin):
-    list_display = ('user', 'total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
+    list_display = ('user', 'total_deposit', 'refer_income', 'total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
     list_filter = ('created_at',)
     search_fields = ('user__username', 'user__email')
-    # readonly_fields = ('total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
-    fields = ()
+    fields = ('user', 'total_deposit', 'refer_income', 'total_income', 'total_withdrawal', 'wallet_balance', 'created_at')
+    readonly_fields = ('created_at',)
     inlines = [TransactionInline]
-
 
 @admin.register(PaymentScreenshot)
 class PaymentScreenshotAdmin(admin.ModelAdmin):
@@ -139,6 +137,7 @@ class PaymentScreenshotAdmin(admin.ModelAdmin):
             return format_html('<img src="{}" style="max-height: 100px;"/>', obj.screenshot.url)
         return "No screenshot"
     screenshot_preview.short_description = 'Screenshot'
+
 # Register the models with their admins
 admin.site.register(CustomUser, CustomUserAdmin)
 admin.site.register(Wallet, WalletAdmin)
